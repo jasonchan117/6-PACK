@@ -18,35 +18,43 @@ import cv2
 import _pickle as cPickle
 
 class Dataset(data.Dataset):
-    def __init__(self, mode, root, add_noise, num_pt, num_cates, count, cate_id):
+    def __init__(self, mode, root, add_noise, num_pt, num_cates, count, cate_id, w_size):
+        # num_cates is the total number of categories gonna be preloaded from dataset, cate_id is the category need to be trained.
         self.root = root
         self.add_noise = add_noise
         self.mode = mode
         self.num_pt = num_pt
         self.num_cates = num_cates
         self.back_root = '{0}/train2017/'.format(self.root)
-
+        self.w_size = w_size
         self.cate_id = cate_id
-
+        # Path list: obj_list[], real_obj_list[], back_list[],
         self.obj_list = {}
         self.obj_name_list = {}
 
         if self.mode == 'train':
             for tmp_cate_id in range(1, self.num_cates+1):
-                self.obj_name_list[tmp_cate_id] = os.listdir('{0}/data_list/train/{1}/'.format(self.root, tmp_cate_id))
+                # (nxm)obj_name_list[] contains the name list of the super dir(1a9e1fb2a51ffd065b07a27512172330) of training list txt file(train/16069/0008)
+                listdir = os.listdir('{0}/data_list/train/{1}/'.format(self.root, tmp_cate_id))
+                self.obj_name_list[tmp_cate_id]=[]
+                for i in listdir:
+                    if os.path.isdir('{0}/data_list/train/{1}/{2}'.format(self.root, tmp_cate_id, i)):
+                        self.obj_name_list[tmp_cate_id].append(i)
+                # self.obj_name_list[tmp_cate_id] = os.listdir('{0}/data_list/train/{1}/'.format(self.root, tmp_cate_id))
                 self.obj_list[tmp_cate_id] = {}
 
                 for item in self.obj_name_list[tmp_cate_id]:
-                    print(tmp_cate_id, item)
+                    #print(tmp_cate_id, item)# item: 1a9e1fb2a51ffd065b07a27512172330
                     self.obj_list[tmp_cate_id][item] = []
 
                     input_file = open('{0}/data_list/train/{1}/{2}/list.txt'.format(self.root, tmp_cate_id, item), 'r')
                     while 1:
-                        input_line = input_file.readline()
+                        input_line = input_file.readline()# read list.txt(train/16069/0008)
                         if not input_line:
                             break
                         if input_line[-1:] == '\n':
                             input_line = input_line[:-1]
+                        # (nxmxk)obj_list is the real training data from {root}/data/train/16069/0008， 0008 here is just a prefix without the 5 suffix indicate the different file like _color.png/mask.png/depth.png/meta.txt_coord.png in 16069 dir.
                         self.obj_list[tmp_cate_id][item].append('{0}/data/{1}'.format(self.root, input_line))
                     input_file.close()
 
@@ -55,13 +63,20 @@ class Dataset(data.Dataset):
         self.real_obj_name_list = {}
 
         for tmp_cate_id in range(1, self.num_cates+1):
-            self.real_obj_name_list[tmp_cate_id] = os.listdir('{0}/data_list/real_{1}/{2}/'.format(self.root, self.mode, tmp_cate_id))
+            # real_obj_name_list contains the real obj names from {}/data_list/real_train/1/ like bottle_blue_google_norm, bottle_starbuck_norm
+            self.real_obj_name_list[tmp_cate_id] = []
+            listdir = os.listdir('{0}/data_list/real_{1}/{2}/'.format(self.root, self.mode, tmp_cate_id))
+            for i in listdir:
+                if os.path.isdir('{0}/data_list/real_{1}/{2}/{3}'.format(self.root, self.mode, tmp_cate_id, i)):
+                    self.real_obj_name_list[tmp_cate_id].append(i)
+
+            # self.real_obj_name_list[tmp_cate_id] = os.listdir('{0}/data_list/real_{1}/{2}/'.format(self.root, self.mode, tmp_cate_id))
             self.real_obj_list[tmp_cate_id] = {}
 
             for item in self.real_obj_name_list[tmp_cate_id]:
-                print(tmp_cate_id, item)
+                #print(tmp_cate_id, item) #item : bottle_blue_google_norm
                 self.real_obj_list[tmp_cate_id][item] = []
-
+                # real_train/scene_2/0000
                 input_file = open('{0}/data_list/real_{1}/{2}/{3}/list.txt'.format(self.root, self.mode, tmp_cate_id, item), 'r')
 
                 while 1:
@@ -70,6 +85,7 @@ class Dataset(data.Dataset):
                         break
                     if input_line[-1:] == '\n':
                         input_line = input_line[:-1]
+                    # real_obj_list contains the prefix of files under the dir {}/data/real_train/scene_2/, which are all consecutive frames in video squence.
                     self.real_obj_list[tmp_cate_id][item].append('{0}/data/{1}'.format(self.root, input_line))
                 input_file.close()
 
@@ -82,7 +98,8 @@ class Dataset(data.Dataset):
                 break
             if input_line[-1:] == '\n':
                 input_line = input_line[:-1]
-            self.back_list.append(self.back_root + input_line)
+        # back_list is the path list of the images in COCO dataset 2017 are about to be used in the training.
+            self.back_list.append(self.back_root + input_line) # back_root is the dir of COCO dataset train2017
         input_file.close()
 
 
@@ -244,7 +261,7 @@ class Dataset(data.Dataset):
         return ans_r, ans_t, ans_idx
 
 
-
+    # choose_obj: the code of the object, choose_frame: the samples prefix.
     def get_frame(self, choose_frame, choose_obj, syn_or_real):
         if syn_or_real:
             mesh_bbox = []
@@ -332,7 +349,7 @@ class Dataset(data.Dataset):
         target_tmp = np.dot(target_tmp, target_r.T) + target_t
         target_tmp[:, 0] *= -1.0
         target_tmp[:, 1] *= -1.0
-        rmin, rmax, cmin, cmax = get_2dbbox(target_tmp, cam_cx, cam_cy, cam_fx, cam_fy, cam_scale)
+        rmin, rmax, cmin, cmax = get_2dbbox(target_tmp, cam_cx, cam_cy, cam_fx, cam_fy, cam_scale) # These four values is the boundaries of 2d bounding box.
         limit = search_fit(target)
 
         if self.add_noise:
@@ -346,17 +363,17 @@ class Dataset(data.Dataset):
 
                 mask = (cv2.imread('{0}_mask.png'.format(choose_frame))[:, :, 0] == 255)
                 img = np.transpose(np.array(img), (2, 0, 1))
-
+                # Here use the object from /data/train/.png to be foreground and the background from /train2017 to synethize a new image.
                 img = img * (~mask) + back_img * mask
 
                 img = np.transpose(img, (1, 2, 0))
 
                 back_cate_id = random.sample([1, 2, 3, 4, 5, 6], 1)[0]
                 back_depth_choose_obj = random.sample(self.real_obj_name_list[back_cate_id], 1)[0]
-                back_choose_frame = random.sample(self.real_obj_list[back_cate_id][back_depth_choose_obj], 1)[0]
+                back_choose_frame = random.sample(self.real_obj_list[back_cate_id][back_depth_choose_obj], 1)[0]# The background depth is random here.
                 back_depth = np.array(self.load_depth('{0}_depth.png'.format(back_choose_frame)))
 
-                ori_back_depth = back_depth * mask
+                ori_back_depth = back_depth * mask # Use image from /data/real_train/scene_n/_depth.png to synthize the new depth map.
                 ori_depth = depth * (~mask)
 
                 back_delta = ori_depth.flatten()[ori_depth.flatten() != 0].mean() - ori_back_depth.flatten()[ori_back_depth.flatten() != 0].mean()
@@ -370,21 +387,24 @@ class Dataset(data.Dataset):
             img = np.array(img)
 
         mask_target = (cv2.imread('{0}_mask.png'.format(choose_frame))[:, :, 2] == idx)[rmin:rmax, cmin:cmax]
-
         choose = (mask_target.flatten() != False).nonzero()[0]
         if len(choose) == 0:
             return 0
 
         img = np.transpose(img[:, :, :3], (2, 0, 1))[:, rmin:rmax, cmin:cmax]
-        depth = depth[rmin:rmax, cmin:cmax]
+        depth = depth[rmin:rmax, cmin:cmax]# Cropping depth map.
 
         img = img / 255.0
 
-        choose = (depth.flatten() > -1000.0).nonzero()[0]
-        depth_masked = depth.flatten()[choose][:, np.newaxis].astype(np.float32)
+        choose = (depth.flatten() > -1000.0).nonzero()[0] # Choose is a 1-d list whose size is depend on the number of non zero value in it, which indicate the index of non zero value in depth.
+        depth_masked = depth.flatten()[choose][:, np.newaxis].astype(np.float32) # The purpose of this step is to exclude the zero value in depth map.
+        # self.xmap and self.ymap are 640 x 480 0 value map.
+        # This step is create x,y maps mask.
         xmap_masked = self.xmap[rmin:rmax, cmin:cmax].flatten()[choose][:, np.newaxis].astype(np.float32)
         ymap_masked = self.ymap[rmin:rmax, cmin:cmax].flatten()[choose][:, np.newaxis].astype(np.float32)
-        pt2 = depth_masked / cam_scale
+
+        ## Create point cloud from depth map after cropping. Its first dim size is equal to choose.
+        pt2 = depth_masked / cam_scale # 1.0
         pt0 = (ymap_masked - cam_cx) * pt2 / cam_fx
         pt1 = (xmap_masked - cam_cy) * pt2 / cam_fy
         cloud = np.concatenate((-pt0, -pt1, pt2), axis=1)
@@ -397,7 +417,7 @@ class Dataset(data.Dataset):
         choose = ((depth.flatten() != 0.0) * choose_temp).nonzero()[0]
         if len(choose) == 0:
             return 0
-        if len(choose) > self.num_pt:
+        if len(choose) > self.num_pt: # The num_pt is a predefined value which is 500 and it means the maximum 3-d points needed to be considered for one object. This value is equal to the number of points in point cloud and choose list.
             c_mask = np.zeros(len(choose), dtype=int)
             c_mask[:self.num_pt] = 1
             np.random.shuffle(c_mask)
@@ -415,7 +435,7 @@ class Dataset(data.Dataset):
         choose = np.array([choose])
 
         cloud = np.dot(cloud - target_t, target_r)
-        cloud = np.dot(cloud, r.T) + t
+        cloud = np.dot(cloud, r.T) + t # This step is to randomly add noise.
 
         t = t / 1000.0
         cloud = cloud / 1000.0
@@ -439,46 +459,90 @@ class Dataset(data.Dataset):
 
 
     def __getitem__(self, index):
-        syn_or_real = (random.randint(1, 20) < 15)
+        syn_or_real = (random.randint(1, 20) < 15) # True(syn): 3/4, False(real): 1/4
         if self.mode == 'val':
             syn_or_real = False
-        
+        img_fr_set = []
+        img_to_set = []
+        choose_fr_set = []
+        choose_to_set = []
+        cloud_fr_set = []
+        cloud_to_set = []
+        r_fr_set = []
+        r_to_set = []
+        t_fr_set = []
+        t_to_set = []
+        target_set = []
+        scale_set = []
+        anchor_set = []
+        mesh_set = []
         if syn_or_real:
-            while 1:
-                try:
-                    choose_obj = random.sample(self.obj_name_list[self.cate_id], 1)[0]
-                    choose_frame = random.sample(self.obj_list[self.cate_id][choose_obj], 2)
+            # Synthetic data 3/4
+            choose_obj = random.sample(self.obj_name_list[self.cate_id], 1)[0]# Select one object.
+            for w in range(self.w_size):
+                while 1:
+                    try:
+                        # self.cate_id is the category to train, default 5. Randomly sample one obj from the metioned category.
+                        # choose_obj = random.sample(self.obj_name_list[self.cate_id], 1)[0] # 1a9e1fb2a51ffd065b07a27512172330 this code indicate the same obj with different pose under the same category.
+                        choose_frame = random.sample(self.obj_list[self.cate_id][choose_obj], 2)# Path like data/train/06652/0003
 
-                    img_fr, choose_fr, cloud_fr, r_fr, t_fr, target_fr, mesh_pts_fr, mesh_bbox_fr, mask_target = self.get_frame(choose_frame[0], choose_obj, syn_or_real)
-                    if np.max(abs(target_fr)) > 1.0:
+                        img_fr, choose_fr, cloud_fr, r_fr, t_fr, target_fr, mesh_pts_fr, mesh_bbox_fr, mask_target = self.get_frame(choose_frame[0], choose_obj, syn_or_real)
+                        if np.max(abs(target_fr)) > 1.0:
+                            continue
+                        img_to, choose_to, cloud_to, r_to, t_to, target_to, _, _, _, = self.get_frame(choose_frame[1], choose_obj, syn_or_real)
+                        if np.max(abs(target_to)) > 1.0:
+                            continue
+
+                        target, scale_factor = self.re_scale(target_fr, target_to)
+                        target_mesh_fr, scale_factor_mesh_fr = self.re_scale(target_fr, mesh_bbox_fr)
+
+                        cloud_to = cloud_to * scale_factor
+                        mesh = mesh_pts_fr * scale_factor_mesh_fr
+                        t_to = t_to * scale_factor
+
+
+                        img_fr_set.append(img_fr)
+                        img_to_set.append(img_to)
+                        choose_fr_set.append(choose_fr)
+                        choose_to_set.append(choose_to)
+                        r_fr_set.append(r_fr)
+                        r_to_set.append(r_to)
+                        t_fr_set.append(t_fr)
+                        cloud_fr_set.append(cloud_fr)
+                        t_to_set.append(t_to)
+                        cloud_to_set.append(cloud_to)
+                        target_set.append(target)
+                        break
+                    except:
                         continue
-                    img_to, choose_to, cloud_to, r_to, t_to, target_to, _, _, _, = self.get_frame(choose_frame[1], choose_obj, syn_or_real)
-                    if np.max(abs(target_to)) > 1.0:
-                        continue
-
-                    target, scale_factor = self.re_scale(target_fr, target_to)
-                    target_mesh_fr, scale_factor_mesh_fr = self.re_scale(target_fr, mesh_bbox_fr)
-
-                    cloud_to = cloud_to * scale_factor
-                    mesh = mesh_pts_fr * scale_factor_mesh_fr
-                    t_to = t_to * scale_factor
-                    break
-                except:
-                    continue
 
         else:
-            while 1:
-                try:
-                    choose_obj = random.sample(self.real_obj_name_list[self.cate_id], 1)[0]
-                    choose_frame = random.sample(self.real_obj_list[self.cate_id][choose_obj], 2)
+            # Real data from video sequence, 1/4
+            choose_obj = random.sample(self.real_obj_name_list[self.cate_id], 1)[0]
+            for w in range(self.w_size):
+                while 1:
+                    try:
 
-                    img_fr, choose_fr, cloud_fr, r_fr, t_fr, target, _ = self.get_frame(choose_frame[0], choose_obj, syn_or_real)
-                    img_to, choose_to, cloud_to, r_to, t_to, target, _ = self.get_frame(choose_frame[1], choose_obj, syn_or_real)
-                    if np.max(abs(target)) > 1.0:
+                        choose_frame = random.sample(self.real_obj_list[self.cate_id][choose_obj], 2)
+
+                        img_fr, choose_fr, cloud_fr, r_fr, t_fr, target, _ = self.get_frame(choose_frame[0], choose_obj, syn_or_real)
+                        img_to, choose_to, cloud_to, r_to, t_to, target, _ = self.get_frame(choose_frame[1], choose_obj, syn_or_real)
+                        if np.max(abs(target)) > 1.0:
+                            continue
+                        img_fr_set.append(img_fr)
+                        img_to_set.append(img_to)
+                        choose_fr_set.append(choose_fr)
+                        choose_to_set.append(choose_to)
+                        r_fr_set.append(r_fr)
+                        r_to_set.append(r_to)
+                        t_fr_set.append(t_fr)
+                        cloud_fr_set.append(cloud_fr)
+                        t_to_set.append(t_to)
+                        cloud_to_set.append(cloud_to)
+                        target_set.append(target)
+                        break
+                    except:
                         continue
-                    break
-                except:
-                    continue
 
         if False:
             p_img = np.transpose(img_fr, (1, 2, 0))
@@ -502,10 +566,16 @@ class Dataset(data.Dataset):
 
         class_gt = np.array([self.cate_id-1])
 
-        anchor_box, scale = self.get_anchor_box(target)
-        cloud_fr, cloud_to = self.change_to_scale(scale, cloud_fr, cloud_to)
+        #anchor_box, scale = self.get_anchor_box(target)
+        for i, cloud in enumerate(cloud_to_set):
+            anchor_box, scale = self.get_anchor_box(target[i])
+            anchor_set.append(anchor_set)
+            scale_set.append(scale)
+            mesh_set.append(self.mesh * scale)
+            cloud_fr_set[i], cloud_to_set[i]=self.change_to_scale(scale, cloud_fr_set[i], cloud_to_set[i])
+        # cloud_fr, cloud_to = self.change_to_scale(scale, cloud_fr, cloud_to)
 
-        mesh = self.mesh * scale
+        # mesh = self.mesh * scale
 
         if False:
             fw = open('temp/{0}_aft_cld_fr.xyz'.format(index), 'w')
@@ -555,19 +625,33 @@ class Dataset(data.Dataset):
             fw.close()
 
 
-        return self.norm(torch.from_numpy(img_fr.astype(np.float32))), \
-               torch.LongTensor(choose_fr.astype(np.int32)), \
-               torch.from_numpy(cloud_fr.astype(np.float32)), \
-               torch.from_numpy(r_fr.astype(np.float32)), \
-               torch.from_numpy(t_fr.astype(np.float32)), \
-               self.norm(torch.from_numpy(img_to.astype(np.float32))), \
-               torch.LongTensor(choose_to.astype(np.int32)), \
-               torch.from_numpy(cloud_to.astype(np.float32)), \
-               torch.from_numpy(r_to.astype(np.float32)), \
-               torch.from_numpy(t_to.astype(np.float32)), \
-               torch.from_numpy(mesh.astype(np.float32)), \
-               torch.from_numpy(anchor_box.astype(np.float32)), \
-               torch.from_numpy(scale.astype(np.float32)), \
+        # return self.norm(torch.from_numpy(img_fr.astype(np.float32))), \
+        #        torch.LongTensor(choose_fr.astype(np.int32)), \
+        #        torch.from_numpy(cloud_fr.astype(np.float32)), \
+        #        torch.from_numpy(r_fr.astype(np.float32)), \
+        #        torch.from_numpy(t_fr.astype(np.float32)), \
+        #        self.norm(torch.from_numpy(img_to.astype(np.float32))), \
+        #        torch.LongTensor(choose_to.astype(np.int32)), \
+        #        torch.from_numpy(cloud_to.astype(np.float32)), \
+        #        torch.from_numpy(r_to.astype(np.float32)), \
+        #        torch.from_numpy(t_to.astype(np.float32)), \
+        #        torch.from_numpy(mesh.astype(np.float32)), \
+        #        torch.from_numpy(anchor_box.astype(np.float32)), \
+        #        torch.from_numpy(scale.astype(np.float32)), \
+        #        torch.LongTensor(class_gt.astype(np.int32))
+        return self.norm(torch.from_numpy(np.array(img_fr_set).astype(np.float32))), \
+               torch.LongTensor(np.array(choose_fr_set).astype(np.int32)), \
+               torch.from_numpy(np.array(cloud_fr_set).astype(np.float32)), \
+               torch.from_numpy(np.array(r_fr_set).astype(np.float32)), \
+               torch.from_numpy(np.array(t_fr_set).astype(np.float32)), \
+               self.norm(torch.from_numpy(np.array(img_to_set).astype(np.float32))), \
+               torch.LongTensor(np.array(choose_to_set).astype(np.int32)), \
+               torch.from_numpy(np.array(cloud_to_set).astype(np.float32)), \
+               torch.from_numpy(np.array(r_to_set).astype(np.float32)), \
+               torch.from_numpy(np.array(t_to_set).astype(np.float32)), \
+               torch.from_numpy(np.array(mesh_set).astype(np.float32)), \
+               torch.from_numpy(np.array(anchor_box_set).astype(np.float32)), \
+               torch.from_numpy(np.array(scale_set).astype(np.float32)), \
                torch.LongTensor(class_gt.astype(np.int32))
 
     def __len__(self):

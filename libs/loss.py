@@ -13,26 +13,40 @@ import torch.distributions as tdist
 import copy
 
 class Loss(_Loss):
-    def __init__(self, num_key, num_cate):
+    def __init__(self, num_key, num_cate, opt):
+        # Num_key:8
         super(Loss, self).__init__(True)
+        self.opt = opt
         self.num_key = num_key
         self.num_cate = num_cate
-
-        self.oneone = Variable(torch.ones(1)).cuda()
-
+        if opt.cuda == True:
+            self.oneone = Variable(torch.ones(1)).cuda()
+        else:
+            self.oneone = Variable(torch.ones(1))
         self.normal = tdist.Normal(torch.tensor([0.0]), torch.tensor([0.0005]))
 
         self.pconf = torch.ones(num_key) / num_key
-        self.pconf = Variable(self.pconf).cuda()
+        if opt.cuda == True:
+            self.pconf = Variable(self.pconf).cuda()
+        else:
+            self.pconf = Variable(self.pconf)
 
-        self.sym_axis = Variable(torch.from_numpy(np.array([0, 1, 0]).astype(np.float32))).cuda().view(1, 3, 1)
-        self.threezero = Variable(torch.from_numpy(np.array([0, 0, 0]).astype(np.float32))).cuda()
+        if opt.cuda == True:
+            self.sym_axis = Variable(torch.from_numpy(np.array([0, 1, 0]).astype(np.float32))).cuda().view(1, 3, 1)
+            self.threezero = Variable(torch.from_numpy(np.array([0, 0, 0]).astype(np.float32))).cuda()
 
-        self.zeros = torch.FloatTensor([0.0 for j in range(num_key-1) for i in range(num_key)]).cuda()
+            self.zeros = torch.FloatTensor([0.0 for j in range(num_key-1) for i in range(num_key)]).cuda()
 
-        self.select1 = torch.tensor([i for j in range(num_key-1) for i in range(num_key)]).cuda()
-        self.select2 = torch.tensor([(i%num_key) for j in range(1, num_key) for i in range(j, j+num_key)]).cuda()
+            self.select1 = torch.tensor([i for j in range(num_key-1) for i in range(num_key)]).cuda()
+            self.select2 = torch.tensor([(i%num_key) for j in range(1, num_key) for i in range(j, j+num_key)]).cuda()
+        else:
+            self.sym_axis = Variable(torch.from_numpy(np.array([0, 1, 0]).astype(np.float32))).view(1, 3, 1)
+            self.threezero = Variable(torch.from_numpy(np.array([0, 0, 0]).astype(np.float32)))
 
+            self.zeros = torch.FloatTensor([0.0 for j in range(num_key - 1) for i in range(num_key)])
+
+            self.select1 = torch.tensor([i for j in range(num_key - 1) for i in range(num_key)])
+            self.select2 = torch.tensor([(i % num_key) for j in range(1, num_key) for i in range(j, j + num_key)])
         self.knn = KNearestNeighbor(1)
 
     def estimate_rotation(self, pt0, pt1, sym_or_not):
@@ -117,6 +131,7 @@ class Loss(_Loss):
         return ver_Kp, cent0
 
     def forward(self, Kp_fr, Kp_to, anc_fr, anc_to, att_fr, att_to, r_fr, t_fr, r_to, t_to, mesh, scale, cate):
+        # kp_fr: (1, 8, 3), anc_fr:(1, 125, 3), att_fr:(1, 125)
         if cate.view(-1).item() in [2, 4, 5]:
             sym_or_not = False
         else:
@@ -127,7 +142,10 @@ class Loss(_Loss):
 
 
         ############ Attention Loss
+        # The ground truth translation of object for each anchor
+        # (1, 125, 3)
         gt_t_fr = t_fr.view(1, 1, 3).repeat(1, num_anc, 1)
+        # (1, ) this is a value indicate the minimum distance between the anchor and the centroid.
         min_fr = torch.min(torch.norm(anc_fr - gt_t_fr, dim=2).view(-1))
         loss_att_fr = torch.sum(((torch.norm(anc_fr - gt_t_fr, dim=2).view(1, num_anc) - min_fr) * att_fr).contiguous().view(-1))
 
