@@ -31,6 +31,7 @@ parser.add_argument('--workers', type=int, default = 5, help='number of data loa
 parser.add_argument('--num_kp', type=int, default = 8, help='number of kp')
 parser.add_argument('--outf', type=str, default = 'models/', help='save dir')
 parser.add_argument('--lr', default=0.0001, help='learning rate')
+parser.add_argument('--epoch', type=int, default=120)
 parser.add_argument('--cuda', action='store_true')
 parser.add_argument('--w_size', default=5, type=int)
 opt = parser.parse_args()
@@ -52,7 +53,7 @@ criterion = Loss(opt.num_kp, opt.num_cates, opt=opt)
 best_test = np.Inf
 optimizer = optim.Adam(model.parameters(), lr=opt.lr)
 
-for epoch in tqdm(range(0, 500)):
+for epoch in tqdm(range(0, opt.epoch)):
     model.train()
     train_dis_avg = 0.0
     train_count = 0
