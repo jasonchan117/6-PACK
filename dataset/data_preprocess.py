@@ -49,9 +49,9 @@ def load_depth(depth_path):
     return depth16
 
 
-image_dir = "/Volumes/Elements/Datasets/NOCS/data/train"
-scale_dir = "/Volumes/Elements/Datasets/NOCS/model_scales"
-pose_dir = "/Volumes/Elements/Datasets/NOCS/data_pose/train"
+image_dir = "/content/drive/MyDrive/Dataset/NOCS/data/train"
+scale_dir = "/content/drive/MyDrive/Dataset/NOCS/model_scales"
+pose_dir = "/content/drive/MyDrive/Dataset/NOCS/data_pose/train"
 
 # image_dir = "../My_NOCS/data/train"
 # scale_dir = "../My_NOCS/model_scales"
