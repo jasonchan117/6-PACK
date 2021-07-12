@@ -31,7 +31,7 @@ class tracker():
         self.first_ite = 10
         self.temp_gap = 3
         self.num_kp = 8
-        self.num_points = 500
+        self.num_points = 576
         self.num_cates = 6
         self.outf = 'models'
         self.min_dis = 0.0005

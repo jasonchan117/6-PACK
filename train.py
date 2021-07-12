@@ -25,7 +25,7 @@ parser = argparse.ArgumentParser()
 parser.add_argument('--dataset_root', type=str, default = 'My_NOCS', help='dataset root dir')
 parser.add_argument('--resume', type=str, default = '',  help='resume model')
 parser.add_argument('--category', type=int, default = 5,  help='category to train')
-parser.add_argument('--num_points', type=int, default = 500, help='points')
+parser.add_argument('--num_points', type=int, default = 576, help='points')
 parser.add_argument('--num_cates', type=int, default = 6, help='number of categories')
 parser.add_argument('--workers', type=int, default = 5, help='number of data loading workers')
 parser.add_argument('--num_kp', type=int, default = 8, help='number of kp')
@@ -106,11 +106,11 @@ for epoch in tqdm(range(0, 500)):
                                                                                                                          Variable(anchor), \
                                                                                                                          Variable(scale), \
                                                                                                                          Variable(cate)
-        # kp_fr: (1, 8, 3), anc_fr:(1, 125, 3), att_fr:(1, 125)
-        Kp_fr, anc_fr, att_fr = model(img_fr, choose_fr, cloud_fr, anchor, scale, cate, t_fr)
-        Kp_to, anc_to, att_to = model(img_to, choose_to, cloud_to, anchor, scale, cate, t_to)
+        # kp_fr: (1, 8, 3), anc_fr:(1, 125, 3), att_fr:(1, 125), reconstruct_set:(1, 4, 2, 3, 24, 24)
+        Kp_fr, anc_fr, att_fr, reconstruct_set_fr, original_set_fr = model(img_fr, choose_fr, cloud_fr, anchor, scale, cate, t_fr)
+        Kp_to, anc_to, att_to, reconstruct_set_to, original_set_to = model(img_to, choose_to, cloud_to, anchor, scale, cate, t_to)
 
-        loss, _ = criterion(Kp_fr, Kp_to, anc_fr, anc_to, att_fr, att_to, r_fr, t_fr, r_to, t_to, mesh, scale, cate)
+        loss, _ = criterion(opt, Kp_fr, Kp_to, anc_fr, anc_to, att_fr, att_to, r_fr, t_fr, r_to, t_to, mesh, scale, cate, reconstruct_set_fr, reconstruct_set_to, original_set_fr, original_set_to)
         loss.backward()
 
         train_dis_avg += loss.item()

@@ -569,7 +569,7 @@ class Dataset(data.Dataset):
         #anchor_box, scale = self.get_anchor_box(target)
         for i, cloud in enumerate(cloud_to_set):
             anchor_box, scale = self.get_anchor_box(target[i])
-            anchor_set.append(anchor_set)
+            anchor_set.append(anchor_box)
             scale_set.append(scale)
             mesh_set.append(self.mesh * scale)
             cloud_fr_set[i], cloud_to_set[i]=self.change_to_scale(scale, cloud_fr_set[i], cloud_to_set[i])
@@ -650,7 +650,7 @@ class Dataset(data.Dataset):
                torch.from_numpy(np.array(r_to_set).astype(np.float32)), \
                torch.from_numpy(np.array(t_to_set).astype(np.float32)), \
                torch.from_numpy(np.array(mesh_set).astype(np.float32)), \
-               torch.from_numpy(np.array(anchor_box_set).astype(np.float32)), \
+               torch.from_numpy(np.array(anchor_set).astype(np.float32)), \
                torch.from_numpy(np.array(scale_set).astype(np.float32)), \
                torch.LongTensor(class_gt.astype(np.int32))
 

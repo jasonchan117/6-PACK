@@ -31,9 +31,10 @@ parser.add_argument('--dataset_root', type=str, default = 'My_NOCS', help='datas
 parser.add_argument('--eval_id', type=int, default = 1, help='the evaluation id')
 parser.add_argument('--ite', type=int, default=10, help='first frame fix iteration')
 parser.add_argument('--num_kp', type=int, default = 8, help='num of kp')
-parser.add_argument('--num_points', type=int, default = 500, help='num of input points')
+parser.add_argument('--num_points', type=int, default = 576, help='num of input points')
 parser.add_argument('--num_cates', type=int, default = 6, help='number of categories')
 parser.add_argument('--outf', type=str, default = 'models/', help='load model dir')
+parser.add_argument('--w_size', default=5, type=int)
 opt = parser.parse_args()
 
 if not os.path.exists('eval_results'):
@@ -45,7 +46,7 @@ if not os.path.exists('eval_results/TEST_{0}'.format(opt.eval_id)):
         os.makedirs('eval_results/TEST_{0}/temp_{1}'.format(opt.eval_id, item))
 
 for choose_cate in choose_cate_list:
-    model = KeyNet(num_points = opt.num_points, num_key = opt.num_kp, num_cates = opt.num_cates)
+    model = KeyNet(num_points = opt.num_points, num_key = opt.num_kp, num_cates = opt.num_cates, opt = opt)
     model.cuda()
     model.eval()
 
