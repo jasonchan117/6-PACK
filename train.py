@@ -22,7 +22,7 @@ from tqdm import tqdm
 cate_list = ['bottle', 'bowl', 'camera', 'can', 'laptop', 'mug']
 
 parser = argparse.ArgumentParser()
-parser.add_argument('--dataset_root', type=str, default = 'My_NOCS', help='dataset root dir')
+parser.add_argument('--dataset_root', type=str, default = 'NOCS', help='dataset root dir')
 parser.add_argument('--resume', type=str, default = '',  help='resume model')
 parser.add_argument('--category', type=int, default = 5,  help='category to train')
 parser.add_argument('--num_points', type=int, default = 576, help='points')
