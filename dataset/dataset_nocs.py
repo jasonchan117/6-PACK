@@ -460,6 +460,7 @@ class Dataset(data.Dataset):
 
     def __getitem__(self, index):
         syn_or_real = (random.randint(1, 20) < 15) # True(syn): 3/4, False(real): 1/4
+        self.w_size = self.w_size + 1
         if self.mode == 'val':
             syn_or_real = False
         img_fr_set = []

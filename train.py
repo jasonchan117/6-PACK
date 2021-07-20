@@ -29,13 +29,14 @@ parser.add_argument('--num_points', type=int, default = 576, help='points')
 parser.add_argument('--num_cates', type=int, default = 6, help='number of categories')
 parser.add_argument('--workers', type=int, default = 5, help='number of data loading workers')
 parser.add_argument('--num_kp', type=int, default = 8, help='number of kp')
-parser.add_argument('--outf', type=str, default = 'models/', help='save dir')
+parser.add_argument('--outf', type=str, default = '/content/drive/MyDrive/Project/6PACK/', help='save dir')
 parser.add_argument('--lr', default=0.0001, help='learning rate')
 parser.add_argument('--epoch', type=int, default=120)
 parser.add_argument('--cuda', action='store_true')
 parser.add_argument('--w_size', default=5, type=int)
+parser.add_argument('--batch_size', type=int, default=1)
+parser.add_argument('--sim', default='ssim', type = str)
 opt = parser.parse_args()
-
 model = KeyNet(num_points = opt.num_points, num_key = opt.num_kp, num_cates = opt.num_cates, opt = opt)
 if opt.cuda == True:
     model.cuda()
@@ -44,7 +45,7 @@ if opt.resume != '':
     model.load_state_dict(torch.load('{0}/{1}'.format(opt.outf, opt.resume)))
 # The num_points is a predefined value which is 500 and it means the maximum 3-d points needed to be considered for one object. This value is equal to the number of points in point cloud and choose list.
 dataset = Dataset('train', opt.dataset_root, True, opt.num_points, opt.num_cates, 5000, opt.category, opt.w_size)
-dataloader = torch.utils.data.DataLoader(dataset, batch_size=1, shuffle=True, num_workers=opt.workers)
+dataloader = torch.utils.data.DataLoader(dataset, batch_size=opt.batch_size, shuffle=True, num_workers=opt.workers)
 test_dataset = Dataset('val', opt.dataset_root, False, opt.num_points, opt.num_cates, 1000, opt.category, opt.w_size)
 testdataloader = torch.utils.data.DataLoader(test_dataset, batch_size=1, shuffle=True, num_workers=opt.workers)
 
@@ -108,10 +109,20 @@ for epoch in tqdm(range(0, opt.epoch)):
                                                                                                                          Variable(scale), \
                                                                                                                          Variable(cate)
         # kp_fr: (1, 8, 3), anc_fr:(1, 125, 3), att_fr:(1, 125), reconstruct_set:(1, 4, 2, 3, 24, 24)
-        Kp_fr, anc_fr, att_fr, reconstruct_set_fr, original_set_fr = model(img_fr, choose_fr, cloud_fr, anchor, scale, cate, t_fr)
-        Kp_to, anc_to, att_to, reconstruct_set_to, original_set_to = model(img_to, choose_to, cloud_to, anchor, scale, cate, t_to)
+        if opt.sim == 'ssim':
+            Kp_fr, anc_fr, att_fr, reconstruct_set_fr, original_set_fr = model(img_fr, choose_fr, cloud_fr, anchor,
+                                                                              scale, cate, t_fr)
+            Kp_to, anc_to, att_to, reconstruct_set_to, original_set_to = model(img_to, choose_to, cloud_to, anchor,
+                                                                              scale, cate, t_to)
 
-        loss, _ = criterion(opt, Kp_fr, Kp_to, anc_fr, anc_to, att_fr, att_to, r_fr, t_fr, r_to, t_to, mesh, scale, cate, reconstruct_set_fr, reconstruct_set_to, original_set_fr, original_set_to)
+            loss, _ = criterion(opt, Kp_fr, Kp_to, anc_fr, anc_to, att_fr, att_to, r_fr, t_fr, r_to, t_to, mesh, scale, cate, reconstruct_set_fr, reconstruct_set_to, original_set_fr, original_set_to)
+        else:
+            Kp_fr, anc_fr, att_fr, reconstruct_set_fr, original_set_fr, siamese_set_fr = model(img_fr, choose_fr, cloud_fr, anchor,
+                                                                              scale, cate, t_fr)
+            Kp_to, anc_to, att_to, reconstruct_set_to, original_set_to, siamese_set_to = model(img_to, choose_to, cloud_to, anchor,
+                                                                              scale, cate, t_to)
+            loss, _ = criterion(opt, Kp_fr, Kp_to, anc_fr, anc_to, att_fr, att_to, r_fr, t_fr, r_to, t_to, mesh, scale, cate, reconstruct_set_fr, reconstruct_set_to, original_set_fr, original_set_to, siamese_set_fr, siamese_set_to)
+
         loss.backward()
 
         train_dis_avg += loss.item()

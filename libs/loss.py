@@ -12,12 +12,14 @@ import pytorch_ssim
 from libs.knn.__init__ import KNearestNeighbor
 import torch.distributions as tdist
 import copy
-
+from libs.triplet import ContrastiveLoss
 class Loss(_Loss):
     def __init__(self, num_key, num_cate, opt):
         # Num_key:8
         super(Loss, self).__init__(True)
         self.opt = opt
+        if opt.sim != 'ssim':
+            self.sia_loss = ContrastiveLoss()
         self.num_key = num_key
         self.num_cate = num_cate
         if opt.cuda == True:
@@ -131,7 +133,7 @@ class Loss(_Loss):
 
         return ver_Kp, cent0
 
-    def forward(self,opt, Kp_fr, Kp_to, anc_fr, anc_to, att_fr, att_to, r_fr, t_fr, r_to, t_to, mesh, scale, cate, reconstruct_set_fr, reconstruct_set_to, original_set_fr, original_set_to):
+    def forward(self,opt, Kp_fr, Kp_to, anc_fr, anc_to, att_fr, att_to, r_fr, t_fr, r_to, t_to, mesh, scale, cate, reconstruct_set_fr, reconstruct_set_to, original_set_fr, original_set_to, siamese_set_fr = None, siamese_set_to = None):
         # kp_fr: (1, 8, 3), anc_fr:(1, 125, 3), att_fr:(1, 125)
         if cate.view(-1).item() in [2, 4, 5]:
             sym_or_not = False
@@ -257,11 +259,41 @@ class Loss(_Loss):
                 loss_rc = loss_rc + ssim_self_fr + ssim_tar_fr + ssim_self_to + ssim_tar_to
         loss_rc /= (opt.w_size - 1)
 
-        ########### SUM UP
+        ########### Siamese Loss
+        # Input #(4xn, 3, 1, 128)
+        if opt.sim != 'ssim':
+            # (4xn, 1, 3, 128)
+            siamese_set_fr = siamese_set_fr.transpose(0, 2, 1).contiguous()
+            siamese_set_to = siamese_set_to.transpose(0, 2, 1).contiguous()
 
-        loss = loss_att * 4.0 + Kp_dis * 3.0 + Kp_cent_dis + loss_rot * 0.2 + loss_surf * 3.0 + loss_sep + loss_rc
+            siamese_set_fr = siamese_set_fr.view(-1, 3, siamese_set_fr.size(3)) #(n, 3, 128)
+            siamese_set_to = siamese_set_to.view(-1, 3, siamese_set_to.size(3)) #(n, 3, 128)
+
+            siamese_set_fr = siamese_set_fr.transpose(1, 0).contiguous() # (3, n, 128)
+            siamese_set_to = siamese_set_to.transpose(1, 0).contiguous() # (3, n, 128)
+            fr_loss = self.sia_loss(siamese_set_fr[0], siamese_set_fr[1], siamese_set_fr[2])
+            to_loss = self.sia_loss(siamese_set_to[0], siamese_set_to[1], siamese_set_to[2])
+
+            loss_sia = fr_loss + to_loss
+
+
+
+
+
+
+
+        ########### SUM UP
+        if self.opt.sim == 'sim':
+            loss = loss_att * 4.0 + Kp_dis * 3.0 + Kp_cent_dis + loss_rot * 0.2 + loss_surf * 3.0 + loss_sep + loss_rc
+            print('Category:{} || Attention loss:{} || Mult_view loss:{}, {} || Rotation loss:{} || Surface loss:{} || Reconstruction loss:{} '.format(cate.view(-1).item(), loss_att.item(), Kp_dis.item(), Kp_cent_dis.item(), loss_rot.item(), loss_surf.item(), loss_sep, loss_rc.item()))
+        else:
+            loss = loss_att * 4.0 + Kp_dis * 3.0 + Kp_cent_dis + loss_rot * 0.2 + loss_surf * 3.0 + loss_sep + loss_rc + loss_sia
+            print(
+                'Category:{} || Attention loss:{} || Mult_view loss:{}, {} || Rotation loss:{} || Surface loss:{} || Reconstruction loss:{} || Siamese loss:{}'.format(
+                    cate.view(-1).item(), loss_att.item(), Kp_dis.item(), Kp_cent_dis.item(), loss_rot.item(),
+                    loss_surf.item(), loss_sep, loss_rc.item(), loss_sia))
+
         score = (loss_att * 4.0 + Kp_dis * 3.0 + Kp_cent_dis + loss_rot * 0.2).item()
-        print('Category:{} || Attention loss:{} || Mult_view loss:{}, {} || Rotation loss:{} || Surface loss:{} || Reconstruction loss:{} '.format(cate.view(-1).item(), loss_att.item(), Kp_dis.item(), Kp_cent_dis.item(), loss_rot.item(), loss_surf.item(), loss_sep, loss_rc.item()))
 
         return loss, score
 

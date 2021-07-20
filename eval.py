@@ -27,7 +27,7 @@ resume_models = ['model_112_0.184814792342484_bottle.pth',
                  'model_102_0.1468337191492319_mug.pth']
 
 parser = argparse.ArgumentParser()
-parser.add_argument('--dataset_root', type=str, default = 'My_NOCS', help='dataset root dir')
+parser.add_argument('--dataset_root', type=str, default = 'NOCS', help='dataset root dir')
 parser.add_argument('--eval_id', type=int, default = 1, help='the evaluation id')
 parser.add_argument('--ite', type=int, default=10, help='first frame fix iteration')
 parser.add_argument('--num_kp', type=int, default = 8, help='num of kp')
@@ -35,6 +35,7 @@ parser.add_argument('--num_points', type=int, default = 576, help='num of input 
 parser.add_argument('--num_cates', type=int, default = 6, help='number of categories')
 parser.add_argument('--outf', type=str, default = 'models/', help='load model dir')
 parser.add_argument('--w_size', default=5, type=int)
+parser.add_argument('--sim', default='ssim', type = str)
 opt = parser.parse_args()
 
 if not os.path.exists('eval_results'):
@@ -56,7 +57,7 @@ for choose_cate in choose_cate_list:
     pconf = Variable(pconf).cuda()
 
     test_dataset = Dataset('val', opt.dataset_root, False, opt.num_points, choose_cate, 1000)
-    criterion = Loss(opt.num_kp, opt.num_cates)
+    criterion = Loss(opt.num_kp, opt.num_cates, opt)
 
     eval_list_file = open('dataset/eval_list/eval_list_{0}.txt'.format(choose_cate), 'r')
     while 1:

@@ -21,6 +21,10 @@ import sys
 from libs.SSA import SSA_Sp, CrossAttention
 from libs.warpn import bi_warp
 import pytorch_ssim
+from libs.triplet import TripletNet
+from libs.triplet import SiameseNet
+from libs.triplet import EmbeddingNet
+from libs.triplet import ContrastiveLoss
 psp_models = {
     'resnet18': lambda: PSPNet(sizes=(1, 2, 3, 6), psp_size=512, deep_features_size=256, backend='resnet18'),
     'resnet34': lambda: PSPNet(sizes=(1, 2, 3, 6), psp_size=512, deep_features_size=256, backend='resnet34'),
@@ -74,18 +78,55 @@ class PoseNetFeat(nn.Module):
 
         return x
 
-class MemoryBank(nn.Module):
-    def __init__(self, w_size):
-        super(MemoryBank, self).__init__()
+class PriorityQueue(nn.Module):
+    def __init__(self, w_size, strategy, triplet = None):
+        super(PriorityQueue, self).__init__()
         self.w_size = w_size
         self.frame_list = []
-    def forward(self, x):
-        if len(self.frame_list) <= self.w_size:
+        self.triplet = triplet
+        self.strategy = strategy
+        self.score = ContrastiveLoss()
+        self.feat_list = []
+    def get_triplet_score(self, x, y):
+        x, y = self.triplet(x, y)# (1, 128)
+        euclidean_distance = self.score(x, y)
+        return euclidean_distance
+    def get_feat(self):
+        result_feat = torch.FloatTensor(self.feat_x_set).cuda()
+        result_feat = result_feat.transpose(1, 0).contiguous()# (1, 5, 125, 500, 160)
+        if len(self.frame_list) < self.w_size:
+            substra = torch.zeros(result_feat.size(0), self.w_size - len(self.frame_list), result_feat.size(2), result_feat.size(3), result_feat.size(4))
+            result_feat = torch.cat((result_feat, substra), 1)
+        return result_feat
+
+    def forward(self, x, x_feat, reconstruct):
+        if len(self.frame_list) < self.w_size:
             self.frame_list.append(x)
+            self.feat_list.append(x_feat)
         else:
-            pass
+            ssim_to_stor = []
+            ssim_to_cur = []
+            for i in self.frame_list:
+                stor, tar = reconstruct(i, x)
+                if self.strategy == 'ssim':
+                    similarity_to_stor = pytorch_ssim.ssim(stor, i, window_size=4).data[0]
+                    similarity_to_cur = pytorch_ssim.ssim(tar, i , window_size=4).data[0]
+                else:
+                    similarity_to_stor = self.get_triplet_score(stor, i) # TRUE FALSE FALSE
+                    similarity_to_cur = self.get_triplet_score(tar, i )
 
-
+                ssim_to_stor.append(similarity_to_stor)
+                ssim_to_cur.append(similarity_to_cur)
+            ssim_to_cur = F.softmax(torch.FloatTensor(ssim_to_cur).cuda())
+            ssim_to_stor = F.softmax(torch.FloatTensor(ssim_to_stor).cuda())
+            s_cur, idx_cur = ssim_to_cur.sort(0, descending = False)
+            s_stor, idx_stor = ssim_to_stor.sort(0, descending = False)
+            for ind, item in enumerate(s_stor):
+                which = idx_stor[ind]
+                if ind >  np.argwhere(idx_cur.numpy() == which)[0][0] :
+                    self.frame_list.pop(idx_stor[ind])
+                    self.frame_list.append(x)
+                    self.feat_list.append(x_feat)
 
 class KeyNet(nn.Module):
     def __init__(self, num_points, num_key, num_cates ,opt):
@@ -95,7 +136,7 @@ class KeyNet(nn.Module):
         self.cnn = ModifiedResnet()
         self.feat = PoseNetFeat(num_points)
         self.num_cates = num_cates
-
+        self.sim = opt.sim
         self.sm = torch.nn.Softmax(dim=2)
         self.w_size = opt.w_size
         self.kp_1 = torch.nn.Conv1d(160, 90, 1)
@@ -106,7 +147,12 @@ class KeyNet(nn.Module):
 
         self.sm2 = torch.nn.Softmax(dim=1)
 
-
+        if self.sim != 'ssim':
+            self.embed = EmbeddingNet()
+            self.triplet = SiameseNet(self.embed)
+            self.queue = PriorityQueue(opt.w_size, opt.sim, self.triplet)
+        else:
+            self.queue = PriorityQueue(opt.w_size, opt.sim)
         self.num_key = num_key
         self.ssa_sp = SSA_Sp(160)
         self.cross_attention = CrossAttention(160)
@@ -115,7 +161,6 @@ class KeyNet(nn.Module):
         else :
             self.threezero = Variable(torch.from_numpy(np.array([0, 0, 0]).astype(np.float32))).view(1, 1, 3).repeat(1, self.num_points, 1)
 
-        self.memory_bank = MemoryBank(opt.w_size)
         self.reconstruct = bi_warp()
 
     def forward(self, img_set, choose_set, x_set, anchor_set, scale_set, cate, gt_t_set):
@@ -199,6 +244,8 @@ class KeyNet(nn.Module):
         target  = rc_set[-1] # (1, 3, 24, 24)
         reconstruct_set = []
         original_set = []
+        if self.opt.sim != 'ssim':
+            siamese_set = []
         store_image_set = rc_set[0:len(rc_set)-1]
         # Generate warping images for storage images and target image respectively and store them in reconstruct_set.
         for st in store_image_set:
@@ -206,10 +253,38 @@ class KeyNet(nn.Module):
             original_set.append([st,target])
             reconstruct_set.append([r_self, r_tar])
 
-        reconstruct_set = torch.FloatTensor(reconstruct_set) # (4, 2, 1, 3, 24, 24)
-        original_set = torch.FloatTensor(original_set)
+        # Training Siamese network
+        if self.opt.sim != 'ssim':
+            for ind, item in enumerate(original_set):
+                emb_rc_tar, emb_tar = self.triplet(reconstruct_set[ind][1], original_set[ind][1]) # (1, 128)
+                emb_rc_self, emb_tar = self.triplet(reconstruct_set[ind][0], original_set[ind][1]) # (1, 128)
+                emb_rc_self, emb_self = self.triplet(reconstruct_set[ind][0], original_set[ind][1])
+
+                siamese_set.append([emb_rc_tar, emb_tar, torch.zeros([emb_rc_tar.size(0)], dtype=torch.float)])# True
+                siamese_set.append([emb_rc_tar, emb_rc_self, torch.ones([emb_rc_tar.size(0)], dtype=torch.float)])# False
+                for index, it in enumerate(original_set):
+                    if index != ind:
+                        r_tar, s_tar = self.triplet(reconstruct_set[index][1], original_set[index][1])  # (1, 128)
+                        r_self, s_tar = self.triplet(reconstruct_set[index][0], original_set[index][1])  # (1, 128)
+                        r_self, s_self = self.triplet(reconstruct_set[index][0], original_set[index][1])
+                        siamese_set.append([emb_rc_tar, r_self, torch.ones([emb_rc_tar.size(0)], dtype=torch.float)])
+                        siamese_set.append([emb_rc_tar, s_self, torch.ones([emb_rc_tar.size(0)], dtype=torch.float)])
+                        siamese_set.append([emb_tar, r_self, torch.ones([emb_rc_tar.size(0)], dtype=torch.float)])
+                        siamese_set.append([emb_tar, s_self, torch.ones([emb_rc_tar.size(0)], dtype=torch.float)])
+                        siamese_set.append([emb_rc_self, r_tar, torch.ones([emb_rc_tar.size(0)], dtype=torch.float)])
+                        siamese_set.append([emb_rc_self, s_tar, torch.ones([emb_rc_tar.size(0)], dtype=torch.float)])
+                        siamese_set.append([emb_self, r_tar, torch.ones([emb_rc_tar.size(0)], dtype=torch.float)])
+                        siamese_set.append([emb_self, s_tar, torch.ones([emb_rc_tar.size(0)], dtype=torch.float)])
+
+                siamese_set.append([emb_rc_self, emb_self, torch.zeros([emb_rc_tar.size(0)], dtype=torch.float)])
+                siamese_set.append([emb_rc_self, emb_rc_tar, torch.ones([emb_rc_tar.size(0)], dtype=torch.float)])
+
+        siamese_set = torch.FloatTensor(siamese_set)#(4xn, 3, 1, 128)
+        reconstruct_set = torch.FloatTensor(reconstruct_set).cuda() # (4, 2, 1, 3, 24, 24)
+        original_set = torch.FloatTensor(original_set).cuda()
         reconstruct_set = reconstruct_set.transpose(2, 0, 1).contiguous() # (1, 4, 2, 3, 24, 24)
         original_set = original_set.transpose(2, 0, 1).contiguous()
+
 
 
         # Compute cross attention bettween current frames and stored frames.
@@ -269,12 +344,13 @@ class KeyNet(nn.Module):
         # (Ground Truth)all_kp_x: The selected kepoint coordinate that is closest to the centroid, (1, 8, 3) .This is infer from the weighted summed anchor feature to select the one that is closest to the object centroid.
         # output_anchor: the anchor coordinate, (1, 125, 3)
         # att_x: (1, 125), Attention score for each anchor point.
+        if self.opt.sim != 'ssim':
+            return all_kp_x, output_anchor, att_x, reconstruct_set, original_set, siamese_set
         return all_kp_x, output_anchor, att_x, reconstruct_set, original_set
 
     def eval_forward(self, img, choose, ori_x, anchor, scale, space, first):
         num_anc = len(anchor[0])
         out_img = self.cnn(img)
-        
         bs, di, _, _ = out_img.size()
 
         emb = out_img.view(bs, di, -1)
@@ -282,6 +358,8 @@ class KeyNet(nn.Module):
         emb = torch.gather(emb, 2, choose)
         emb = emb.repeat(1, 1, num_anc).detach()
         #print(emb.size())
+        rc_img = torch.gather(img.view(bs, 3, -1), 2, choose).contiguous()
+        rc_img = rc_img.view(bs, 3, 24, 24)
 
         output_anchor = anchor.view(1, num_anc, 3)
         anchor_for_key = anchor.view(1, num_anc, 1, 3).repeat(1, 1, self.num_key, 1)
@@ -315,12 +393,23 @@ class KeyNet(nn.Module):
             feat_x = self.feat(x, emb)
             feat_x = feat_x.transpose(2, 1)
             feat_x = feat_x.view(1, num_anc, self.num_points, 160).detach()
-
+            # Spatial Attention
+            feat_x = self.ssa_sp(feat_x)
             loc = x.transpose(2, 1).view(1, num_anc, self.num_points, 3)
             weight = self.sm(-1.0 * torch.norm(loc, dim=3))
             weight = weight.view(1, num_anc, self.num_points, 1).repeat(1, 1, 1, 160)
+            feat_x = feat_x * weight
+            # Cross Attention
+            self.queue(rc_img, feat_x, self.reconstruct)
+            feat_x_set = self.queue.get_feat()
 
-            feat_x = torch.sum((feat_x * weight), dim=2).view(1, num_anc, 160)
+            # Cross attention across frames in the memory_bank.
+            w_feat = self.cross_attention(feat_x_set, feat_x.unsqueeze(1))
+            feat_x = torch.sum(w_feat, dim=1)  # (1 , 125 , 500, 160)
+
+
+
+            feat_x = torch.sum((feat_x), dim=2).view(1, num_anc, 160)
             feat_x = feat_x.transpose(2, 1).detach()
 
             kp_feat = F.leaky_relu(self.kp_1(feat_x))
