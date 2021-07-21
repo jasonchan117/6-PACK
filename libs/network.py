@@ -163,7 +163,7 @@ class KeyNet(nn.Module):
             self.queue = PriorityQueue(opt.w_size, opt.sim)
         self.num_key = num_key
         self.ssa_sp = SSA_Sp(160)
-        self.cross_attention = CrossAttention(160)
+        self.cross_attention = CrossAttention(opt.w_size)
         if opt.cuda == True:
             self.threezero = Variable(torch.from_numpy(np.array([0, 0, 0]).astype(np.float32))).cuda().view(1, 1,
                                                                                                             3).repeat(1,
@@ -179,7 +179,6 @@ class KeyNet(nn.Module):
     def forward(self, img_set, choose_set, x_set, anchor_set, scale_set, cate, gt_t_set):
 
         # When training
-        print(img_set[0].size())
         choose_set = choose_set.transpose(1, 0).contiguous()
         x_set = x_set.transpose(1, 0).contiguous()
         anchor_set = anchor_set.transpose(1, 0).contiguous()
@@ -235,15 +234,14 @@ class KeyNet(nn.Module):
             x = x.transpose(2, 1).contiguous()
             # emb size(1, 32, 500 x 125)
             # The feature of each color points.
-            feat_x = self.feat(x,
-                               emb)  # (DenseFusion) Combine 3D information x and image embedding emb output size(1, 160, 62500=500 x 125)
+            feat_x = self.feat(x, emb)  # (DenseFusion) Combine 3D information x and image embedding emb output size(1, 160, 62500=500 x 125)
             # (1, 62500, 160)
             feat_x = feat_x.transpose(2, 1).contiguous()
             # (1, 125, 500, 160)
             # Points features
             feat_x = feat_x.view(1, num_anc, self.num_points, 160).contiguous()
             ## Using spatial attention
-            feat_x = self.ssa_sp(feat_x)
+            # feat_x = self.ssa_sp(feat_x)
 
             # (1, 125, 500, 3)
             loc = x.transpose(2, 1).contiguous().view(1, num_anc, self.num_points, 3)
@@ -255,7 +253,8 @@ class KeyNet(nn.Module):
             # (1, 125, 500, 160)
             weight = weight.view(1, num_anc, self.num_points, 1).repeat(1, 1, 1, 160).contiguous()
             feat_x = feat_x * weight
-            feat_x_set.append(feat_x)
+            feat_x = torch.sum((feat_x), dim=2).contiguous().view(1, num_anc, 160)
+            feat_x_set.append(feat_x) #(4, 1, 125, 160)
 
         # Image set including current frame and prevous frames.
         # rc_set(list) = [5]( 1, 3, 24, 24)
@@ -322,20 +321,20 @@ class KeyNet(nn.Module):
 
         # Compute cross attention bettween current frames and stored frames.
         # feat_x_set = torch.from_numpy(np.array(feat_x_set).astype(np.float32))
+        # (4, 1 , 125, 160)
         feat_x_set = torch.cat([i.unsqueeze(0) for i in feat_x_set], dim=0)
-        feat_x_set = feat_x_set.transpose(1, 0).contiguous()  # (1, 5, 125, 500, 160)
-        s_f = feat_x_set[:, 0:feat_x_set.size(1), :, :, :]  # (1, 4, 125, 500, 160)
-        t_f = feat_x_set[:, feat_x_set.size(1) - 1, :, :, :]  # (1, 1, 125, 500, 160)
+        feat_x_set = feat_x_set.transpose(1, 0).contiguous()  # (1, 5, 125, 160)
+        s_f = feat_x_set[:, 0:feat_x_set.size(1), : , :]  # (1, 4, 125, 160)
+        t_f = feat_x_set[:, feat_x_set.size(1) - 1, :, :]  # (1, 1, 125, 160)
         # Cross attention across frames in the memory_bank.
         t_f = t_f.unsqueeze(0)
-        w_feat = self.cross_attention(s_f, t_f)  # (1, 4, 125, 500, 160)
-        feat_x = torch.sum(w_feat, dim=1)  # (1 , 125 , 500, 160)
+        w_feat = self.cross_attention(s_f, t_f)  # (1, 4, 125, 160)
+        feat_x = torch.sum(w_feat, dim=1)  # (1 , 125, 160)
 
         # Anchor features
         # The weighted summation of points to 125 represent anchors whose feature dimension is 160.
         # (1, 125, 160)
-        feat_x = torch.sum((feat_x), dim=2).contiguous().view(1, num_anc,
-                                                              160)  ###Anchor features This is the local spatial attention feature, it will be used to selected the one with highest score to generate k keypoints.
+        # feat_x = torch.sum((feat_x), dim=2).contiguous().view(1, num_anc,160)  ###Anchor features This is the local spatial attention feature, it will be used to selected the one with highest score to generate k keypoints.
         # (1, 160, 125)
         feat_x = feat_x.transpose(2, 1).contiguous()
         # Generate 8 keypoints according to the features from feat_x.
