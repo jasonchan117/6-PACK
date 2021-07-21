@@ -502,6 +502,8 @@ class Dataset(data.Dataset):
                         t_to = t_to * scale_factor
 
 
+                        img_fr = self.norm(torch.from_numpy(img_fr.astype(np.float32)))
+                        img_to = self.norm(torch.from_numpy(img_to.astype(np.float32)))
                         img_fr_set.append(img_fr)
                         img_to_set.append(img_to)
                         choose_fr_set.append(choose_fr)
@@ -530,6 +532,8 @@ class Dataset(data.Dataset):
                         img_to, choose_to, cloud_to, r_to, t_to, target, _ = self.get_frame(choose_frame[1], choose_obj, syn_or_real)
                         if np.max(abs(target)) > 1.0:
                             continue
+                        img_fr = self.norm(torch.from_numpy(img_fr.astype(np.float32)))
+                        img_to = self.norm(torch.from_numpy(img_to.astype(np.float32)))
                         img_fr_set.append(img_fr)
                         img_to_set.append(img_to)
                         choose_fr_set.append(choose_fr)
@@ -569,7 +573,7 @@ class Dataset(data.Dataset):
 
         #anchor_box, scale = self.get_anchor_box(target)
         for i, cloud in enumerate(cloud_to_set):
-            anchor_box, scale = self.get_anchor_box(target[i])
+            anchor_box, scale = self.get_anchor_box(target_set[i])
             anchor_set.append(anchor_box)
             scale_set.append(scale)
             mesh_set.append(self.mesh * scale)
@@ -640,12 +644,12 @@ class Dataset(data.Dataset):
         #        torch.from_numpy(anchor_box.astype(np.float32)), \
         #        torch.from_numpy(scale.astype(np.float32)), \
         #        torch.LongTensor(class_gt.astype(np.int32))
-        return self.norm(torch.from_numpy(np.array(img_fr_set).astype(np.float32))), \
+        return img_fr_set, \
                torch.LongTensor(np.array(choose_fr_set).astype(np.int32)), \
                torch.from_numpy(np.array(cloud_fr_set).astype(np.float32)), \
                torch.from_numpy(np.array(r_fr_set).astype(np.float32)), \
                torch.from_numpy(np.array(t_fr_set).astype(np.float32)), \
-               self.norm(torch.from_numpy(np.array(img_to_set).astype(np.float32))), \
+               img_to_set, \
                torch.LongTensor(np.array(choose_to_set).astype(np.int32)), \
                torch.from_numpy(np.array(cloud_to_set).astype(np.float32)), \
                torch.from_numpy(np.array(r_to_set).astype(np.float32)), \

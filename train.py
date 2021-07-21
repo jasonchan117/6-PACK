@@ -16,13 +16,12 @@ from torch.autograd import Variable
 from dataset.dataset_nocs import Dataset
 from libs.network import KeyNet
 from libs.loss import Loss
-from matplotlib import pyplot as plt
 import sys
 from tqdm import tqdm
 cate_list = ['bottle', 'bowl', 'camera', 'can', 'laptop', 'mug']
 
 parser = argparse.ArgumentParser()
-parser.add_argument('--dataset_root', type=str, default = 'NOCS', help='dataset root dir')
+parser.add_argument('--dataset_root', type=str, default = '/content/drive/MyDrive/Dataset/NOCS', help='dataset root dir')
 parser.add_argument('--resume', type=str, default = '',  help='resume model')
 parser.add_argument('--category', type=int, default = 5,  help='category to train')
 parser.add_argument('--num_points', type=int, default = 576, help='points')
@@ -79,12 +78,13 @@ for epoch in tqdm(range(0, opt.epoch)):
 
         # sys.exit()
         if opt.cuda == True:
-            img_fr, choose_fr, cloud_fr, r_fr, t_fr, img_to, choose_to, cloud_to, r_to, t_to, mesh, anchor, scale, cate = Variable(img_fr).cuda(), \
-                                                                                                                         Variable(choose_fr).cuda(), \
+            for ind, e in enumerate(img_fr):
+                img_fr[ind] = Variable(img_fr[ind]).cuda()
+                img_to[ind] = Variable(img_to[ind]).cuda()
+            choose_fr, cloud_fr, r_fr, t_fr,  choose_to, cloud_to, r_to, t_to, mesh, anchor, scale, cate = Variable(choose_fr).cuda(), \
                                                                                                                          Variable(cloud_fr).cuda(), \
                                                                                                                          Variable(r_fr).cuda(), \
                                                                                                                          Variable(t_fr).cuda(), \
-                                                                                                                         Variable(img_to).cuda(), \
                                                                                                                          Variable(choose_to).cuda(), \
                                                                                                                          Variable(cloud_to).cuda(), \
                                                                                                                          Variable(r_to).cuda(), \
@@ -94,20 +94,22 @@ for epoch in tqdm(range(0, opt.epoch)):
                                                                                                                          Variable(scale).cuda(), \
                                                                                                                          Variable(cate).cuda()
         else:
-            img_fr, choose_fr, cloud_fr, r_fr, t_fr, img_to, choose_to, cloud_to, r_to, t_to, mesh, anchor, scale, cate = Variable(img_fr), \
-                                                                                                                         Variable(choose_fr), \
-                                                                                                                         Variable(cloud_fr), \
-                                                                                                                         Variable(r_fr), \
-                                                                                                                         Variable(t_fr), \
-                                                                                                                         Variable(img_to), \
-                                                                                                                         Variable(choose_to), \
-                                                                                                                         Variable(cloud_to), \
-                                                                                                                         Variable(r_to), \
-                                                                                                                         Variable(t_to), \
-                                                                                                                         Variable(mesh), \
-                                                                                                                         Variable(anchor), \
-                                                                                                                         Variable(scale), \
-                                                                                                                         Variable(cate)
+            for ind, e in enumerate(img_fr):
+                img_fr[ind] = Variable(img_fr[ind])
+                img_to[ind] = Variable(img_to[ind])
+            choose_fr, cloud_fr, r_fr, t_fr,  choose_to, cloud_to, r_to, t_to, mesh, anchor, scale, cate = Variable(choose_fr), \
+                                                                                                             Variable(cloud_fr), \
+                                                                                                             Variable(r_fr), \
+                                                                                                             Variable(t_fr), \
+                                                                                                             Variable(choose_to), \
+                                                                                                             Variable(cloud_to), \
+                                                                                                             Variable(r_to), \
+                                                                                                             Variable(t_to), \
+                                                                                                             Variable(mesh), \
+                                                                                                             Variable(anchor), \
+                                                                                                             Variable(scale), \
+                                                                                                             Variable(cate)
+
         # kp_fr: (1, 8, 3), anc_fr:(1, 125, 3), att_fr:(1, 125), reconstruct_set:(1, 4, 2, 3, 24, 24)
         if opt.sim == 'ssim':
             Kp_fr, anc_fr, att_fr, reconstruct_set_fr, original_set_fr = model(img_fr, choose_fr, cloud_fr, anchor,

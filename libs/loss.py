@@ -13,6 +13,8 @@ from libs.knn.__init__ import KNearestNeighbor
 import torch.distributions as tdist
 import copy
 from libs.triplet import ContrastiveLoss
+
+
 class Loss(_Loss):
     def __init__(self, num_key, num_cate, opt):
         # Num_key:8
@@ -38,10 +40,11 @@ class Loss(_Loss):
             self.sym_axis = Variable(torch.from_numpy(np.array([0, 1, 0]).astype(np.float32))).cuda().view(1, 3, 1)
             self.threezero = Variable(torch.from_numpy(np.array([0, 0, 0]).astype(np.float32))).cuda()
 
-            self.zeros = torch.FloatTensor([0.0 for j in range(num_key-1) for i in range(num_key)]).cuda()
+            self.zeros = torch.FloatTensor([0.0 for j in range(num_key - 1) for i in range(num_key)]).cuda()
 
-            self.select1 = torch.tensor([i for j in range(num_key-1) for i in range(num_key)]).cuda()
-            self.select2 = torch.tensor([(i%num_key) for j in range(1, num_key) for i in range(j, j+num_key)]).cuda()
+            self.select1 = torch.tensor([i for j in range(num_key - 1) for i in range(num_key)]).cuda()
+            self.select2 = torch.tensor(
+                [(i % num_key) for j in range(1, num_key) for i in range(j, j + num_key)]).cuda()
         else:
             self.sym_axis = Variable(torch.from_numpy(np.array([0, 1, 0]).astype(np.float32))).view(1, 3, 1)
             self.threezero = Variable(torch.from_numpy(np.array([0, 0, 0]).astype(np.float32)))
@@ -109,7 +112,7 @@ class Loss(_Loss):
     def change_to_ver(self, Kp):
         pconf2 = self.pconf.view(1, self.num_key, 1)
         cent0 = torch.sum(Kp * pconf2, dim=1).view(-1).contiguous()
-        
+
         num_kp = self.num_key
         ver_Kp_1 = Kp[:, :, 1].view(1, num_kp, 1).contiguous()
 
@@ -133,7 +136,9 @@ class Loss(_Loss):
 
         return ver_Kp, cent0
 
-    def forward(self,opt, Kp_fr, Kp_to, anc_fr, anc_to, att_fr, att_to, r_fr, t_fr, r_to, t_to, mesh, scale, cate, reconstruct_set_fr, reconstruct_set_to, original_set_fr, original_set_to, siamese_set_fr = None, siamese_set_to = None):
+    def forward(self, opt, Kp_fr, Kp_to, anc_fr, anc_to, att_fr, att_to, r_fr, t_fr, r_to, t_to, mesh, scale, cate,
+                reconstruct_set_fr, reconstruct_set_to, original_set_fr, original_set_to, siamese_set_fr=None,
+                siamese_set_to=None):
         # kp_fr: (1, 8, 3), anc_fr:(1, 125, 3), att_fr:(1, 125)
         if cate.view(-1).item() in [2, 4, 5]:
             sym_or_not = False
@@ -143,18 +148,19 @@ class Loss(_Loss):
         num_kp = self.num_key
         num_anc = len(anc_fr[0])
 
-
         ############ Attention Loss
         # The ground truth translation of object for each anchor
         # (1, 125, 3)
         gt_t_fr = t_fr.view(1, 1, 3).repeat(1, num_anc, 1)
         # (1, ) this is a value indicate the minimum distance between the anchor and the centroid.
         min_fr = torch.min(torch.norm(anc_fr - gt_t_fr, dim=2).view(-1))
-        loss_att_fr = torch.sum(((torch.norm(anc_fr - gt_t_fr, dim=2).view(1, num_anc) - min_fr) * att_fr).contiguous().view(-1))
+        loss_att_fr = torch.sum(
+            ((torch.norm(anc_fr - gt_t_fr, dim=2).view(1, num_anc) - min_fr) * att_fr).contiguous().view(-1))
 
         gt_t_to = t_to.view(1, 1, 3).repeat(1, num_anc, 1)
         min_to = torch.min(torch.norm(anc_to - gt_t_to, dim=2).view(-1))
-        loss_att_to = torch.sum(((torch.norm(anc_to - gt_t_to, dim=2).view(1, num_anc) - min_to) * att_to).contiguous().view(-1))
+        loss_att_to = torch.sum(
+            ((torch.norm(anc_to - gt_t_to, dim=2).view(1, num_anc) - min_to) * att_to).contiguous().view(-1))
 
         loss_att = (loss_att_fr + loss_att_to).contiguous() / 2.0
 
@@ -173,7 +179,6 @@ class Loss(_Loss):
             cent_to = torch.mean(gt_Kp_to, dim=1).view(-1).contiguous()
             Kp_cent_dis = (torch.norm(cent_fr - self.threezero) + torch.norm(cent_to - self.threezero)) / 2.0
 
-
         ############# Pose Error Loss
         rot_Kp_fr = (Kp_fr - t_fr).contiguous()
         rot_Kp_to = (Kp_to - t_to).contiguous()
@@ -190,7 +195,6 @@ class Loss(_Loss):
             frob = torch.sqrt(frob_sqr).unsqueeze(0).contiguous()
             cc = torch.cat([self.oneone, frob / (2 * math.sqrt(2))]).contiguous()
             loss_rot = 2.0 * torch.mean(torch.asin(torch.min(cc))).contiguous()
-
 
         ############# Close To Surface Loss
         bs = 1
@@ -217,7 +221,6 @@ class Loss(_Loss):
 
         loss_surf = (loss_surf_fr + loss_surf_to).contiguous() / 2.0
 
-
         ############# Separate Loss
         scale = scale.view(-1)
         max_rad = torch.norm(scale).item()
@@ -225,67 +228,78 @@ class Loss(_Loss):
         gt_Kp_fr_select1 = torch.index_select(gt_Kp_fr, 1, self.select1).contiguous()
         gt_Kp_fr_select2 = torch.index_select(gt_Kp_fr, 1, self.select2).contiguous()
         loss_sep_fr = torch.norm((gt_Kp_fr_select1 - gt_Kp_fr_select2), dim=2).view(-1).contiguous()
-        loss_sep_fr = torch.max(self.zeros, max_rad/8.0 - loss_sep_fr).contiguous()
+        loss_sep_fr = torch.max(self.zeros, max_rad / 8.0 - loss_sep_fr).contiguous()
         loss_sep_fr = torch.mean(loss_sep_fr).contiguous()
 
         gt_Kp_to_select1 = torch.index_select(gt_Kp_to, 1, self.select1).contiguous()
         gt_Kp_to_select2 = torch.index_select(gt_Kp_to, 1, self.select2).contiguous()
         loss_sep_to = torch.norm((gt_Kp_to_select1 - gt_Kp_to_select2), dim=2).view(-1).contiguous()
-        loss_sep_to = torch.max(self.zeros, max_rad/8.0 - loss_sep_to).contiguous()
+        loss_sep_to = torch.max(self.zeros, max_rad / 8.0 - loss_sep_to).contiguous()
         loss_sep_to = torch.mean(loss_sep_to).contiguous()
 
         loss_sep = (loss_sep_fr + loss_sep_to) / 2.0
 
         # Reconstruction loss
-        # (1, 4, 2, 3, 24, 24)
-        # (4, 2, 1, 3, 24, 24)
+        # (4, 2, 3, 24, 24)
         # self, target
-        reconstruct_set_to = reconstruct_set_to.transpose(1, 2, 0).contiguous()
-        reconstruct_set_fr = reconstruct_set_fr.transpose(1, 2, 0).contiguous()
-        original_set_to = original_set_to.transpose(1, 2, 0).contiguous()
-        original_set_fr = original_set_fr.transpose(1, 2, 0).contiguous()
+        # reconstruct_set_to = reconstruct_set_to.transpose(1, 2, 0).contiguous()
+        # reconstruct_set_fr = reconstruct_set_fr.transpose(1, 2, 0).contiguous()
+        # original_set_to = original_set_to.transpose(1, 2, 0).contiguous()
+        # original_set_fr = original_set_fr.transpose(1, 2, 0).contiguous()
+        reconstruct_set_fr1 = torch.cat([i[0].unsqueeze(0) for i in reconstruct_set_fr], dim=0)
+        reconstruct_set_fr2 = torch.cat([i[1].unsqueeze(0) for i in reconstruct_set_fr], dim=0)
+        original_set_fr1 = torch.cat([i[0].unsqueeze(0) for i in original_set_fr], dim=0)
+        original_set_fr2 = torch.cat([i[1].unsqueeze(0) for i in original_set_fr], dim=0)
 
         ssim_loss = pytorch_ssim.SSIM(window_size=4)
-        for i in range(opt.w_size-1):
-            ssim_self_fr = 0.85 * (1-ssim_loss(reconstruct_set_fr[0], original_set_fr[0])) / 2 + 0.15 * torch.mean(reconstruct_set_fr[0] - original_set_fr[0] )
-            ssim_tar_fr = 0.85 * (1-ssim_loss(reconstruct_set_fr[1], original_set_fr[1])) / 2 + 0.15 * torch.mean( reconstruct_set_fr[1] - original_set_fr[1] )
+        for i in range(opt.w_size - 1):
+            ssim_self_fr = 0.85 * (1 - ssim_loss(reconstruct_set_fr1, original_set_fr1)) / 2 + 0.15 * torch.mean(
+                reconstruct_set_fr1 - original_set_fr1)
+            ssim_tar_fr = 0.85 * (1 - ssim_loss(reconstruct_set_fr2, original_set_fr2)) / 2 + 0.15 * torch.mean(
+                reconstruct_set_fr2 - original_set_fr2)
 
-            ssim_self_to = 0.85 * (1-ssim_loss(reconstruct_set_to[0], original_set_to[0])) / 2 + 0.15 * torch.mean(reconstruct_set_to[0] - original_set_to[0] )
-            ssim_tar_to = 0.85 * (1-ssim_loss(reconstruct_set_to[1], original_set_to[1])) / 2 + 0.15 * torch.mean( reconstruct_set_to[1] - original_set_to[1] )
+            ssim_self_to = 0.85 * (1 - ssim_loss(reconstruct_set_to1, original_set_to1)) / 2 + 0.15 * torch.mean(
+                reconstruct_set_to1 - original_set_to1)
+            ssim_tar_to = 0.85 * (1 - ssim_loss(reconstruct_set_to2, original_set_to2)) / 2 + 0.15 * torch.mean(
+                reconstruct_set_to2 - original_set_to2)
 
             if i == 0:
                 loss_rc = ssim_self_fr + ssim_tar_fr + ssim_self_to + ssim_tar_to
-            else :
+            else:
                 loss_rc = loss_rc + ssim_self_fr + ssim_tar_fr + ssim_self_to + ssim_tar_to
         loss_rc /= (opt.w_size - 1)
 
         ########### Siamese Loss
-        # Input #(4xn, 3, 1, 128)
+        # Input #(4xn, 3, 128)
         if opt.sim != 'ssim':
             # (4xn, 1, 3, 128)
-            siamese_set_fr = siamese_set_fr.transpose(0, 2, 1).contiguous()
-            siamese_set_to = siamese_set_to.transpose(0, 2, 1).contiguous()
+            # siamese_set_fr = siamese_set_fr.transpose(0, 2, 1).contiguous()
+            # siamese_set_to = siamese_set_to.transpose(0, 2, 1).contiguous()
 
-            siamese_set_fr = siamese_set_fr.view(-1, 3, siamese_set_fr.size(3)) #(n, 3, 128)
-            siamese_set_to = siamese_set_to.view(-1, 3, siamese_set_to.size(3)) #(n, 3, 128)
+            # siamese_set_fr = siamese_set_fr.view(-1, 3, siamese_set_fr.size(3)) #(n, 3, 128)
+            # siamese_set_to = siamese_set_to.view(-1, 3, siamese_set_to.size(3)) #(n, 3, 128)
 
-            siamese_set_fr = siamese_set_fr.transpose(1, 0).contiguous() # (3, n, 128)
-            siamese_set_to = siamese_set_to.transpose(1, 0).contiguous() # (3, n, 128)
-            fr_loss = self.sia_loss(siamese_set_fr[0], siamese_set_fr[1], siamese_set_fr[2])
-            to_loss = self.sia_loss(siamese_set_to[0], siamese_set_to[1], siamese_set_to[2])
+            # siamese_set_fr = siamese_set_fr.transpose(1, 0).contiguous() # (3, n, 128)
+            # siamese_set_to = siamese_set_to.transpose(1, 0).contiguous() # (3, n, 128)
+            siamese_set_fr1 = torch.cat([t[0].unsqueeze(0) for t in siamese_set_fr], dim=0)
+            siamese_set_fr2 = torch.cat([t[1].unsqueeze(0) for t in siamese_set_fr], dim=0)
+            siamese_set_fr3 = torch.cat([t[2].unsqueeze(0) for t in siamese_set_fr], dim=0)
+
+            siamese_set_to1 = torch.cat([t[0].unsqueeze(0) for t in siamese_set_to], dim=0)
+            siamese_set_to2 = torch.cat([t[1].unsqueeze(0) for t in siamese_set_to], dim=0)
+            siamese_set_to3 = torch.cat([t[2].unsqueeze(0) for t in siamese_set_to], dim=0)
+            fr_loss = self.sia_loss(siamese_set_fr1, siamese_set_fr2, siamese_set_fr3)
+            to_loss = self.sia_loss(siamese_set_to1, siamese_set_to2, siamese_set_to3)
 
             loss_sia = fr_loss + to_loss
-
-
-
-
-
-
 
         ########### SUM UP
         if self.opt.sim == 'sim':
             loss = loss_att * 4.0 + Kp_dis * 3.0 + Kp_cent_dis + loss_rot * 0.2 + loss_surf * 3.0 + loss_sep + loss_rc
-            print('Category:{} || Attention loss:{} || Mult_view loss:{}, {} || Rotation loss:{} || Surface loss:{} || Reconstruction loss:{} '.format(cate.view(-1).item(), loss_att.item(), Kp_dis.item(), Kp_cent_dis.item(), loss_rot.item(), loss_surf.item(), loss_sep, loss_rc.item()))
+            print(
+                'Category:{} || Attention loss:{} || Mult_view loss:{}, {} || Rotation loss:{} || Surface loss:{} || Reconstruction loss:{} '.format(
+                    cate.view(-1).item(), loss_att.item(), Kp_dis.item(), Kp_cent_dis.item(), loss_rot.item(),
+                    loss_surf.item(), loss_sep, loss_rc.item()))
         else:
             loss = loss_att * 4.0 + Kp_dis * 3.0 + Kp_cent_dis + loss_rot * 0.2 + loss_surf * 3.0 + loss_sep + loss_rc + loss_sia
             print(
@@ -296,7 +310,6 @@ class Loss(_Loss):
         score = (loss_att * 4.0 + Kp_dis * 3.0 + Kp_cent_dis + loss_rot * 0.2).item()
 
         return loss, score
-
 
     def ev(self, Kp_fr, Kp_to, att_to):
         ori_Kp_fr = Kp_fr

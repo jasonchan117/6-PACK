@@ -1,5 +1,5 @@
 from torch import nn
-
+import torch
 Pool = nn.MaxPool2d
 
 
