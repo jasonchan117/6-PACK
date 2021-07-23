@@ -285,8 +285,8 @@ class KeyNet(nn.Module):
                 emb_self = emb_self.squeeze(0)
                 emb_tar = emb_tar.squeeze(0)
 
-                siamese_set.append([emb_rc_tar, emb_tar, torch.zeros([1], dtype=torch.float)])  # True
-                siamese_set.append([emb_rc_tar, emb_rc_self, torch.ones([1], dtype=torch.float)])  # False
+                siamese_set.append([emb_rc_tar, emb_tar, torch.zeros([1], dtype=torch.float).cuda()])  # True
+                siamese_set.append([emb_rc_tar, emb_rc_self, torch.ones([1], dtype=torch.float).cuda()])  # False
                 for index, it in enumerate(original_set):
                     if index != ind:
                         r_tar, s_tar = self.triplet(reconstruct_set[index][1].unsqueeze(0),
@@ -301,17 +301,17 @@ class KeyNet(nn.Module):
                         r_self = r_self.squeeze(0)
                         s_self = s_self.squeeze(0)
 
-                        siamese_set.append([emb_rc_tar, r_self, torch.ones([1], dtype=torch.float)])
-                        siamese_set.append([emb_rc_tar, s_self, torch.ones([1], dtype=torch.float)])
-                        siamese_set.append([emb_tar, r_self, torch.ones([1], dtype=torch.float)])
-                        siamese_set.append([emb_tar, s_self, torch.ones([1], dtype=torch.float)])
-                        siamese_set.append([emb_rc_self, r_tar, torch.ones([1], dtype=torch.float)])
-                        siamese_set.append([emb_rc_self, s_tar, torch.ones([1], dtype=torch.float)])
-                        siamese_set.append([emb_self, r_tar, torch.ones([1], dtype=torch.float)])
-                        siamese_set.append([emb_self, s_tar, torch.ones([1], dtype=torch.float)])
+                        siamese_set.append([emb_rc_tar, r_self, torch.ones([1], dtype=torch.float).cuda()])
+                        siamese_set.append([emb_rc_tar, s_self, torch.ones([1], dtype=torch.float).cuda()])
+                        siamese_set.append([emb_tar, r_self, torch.ones([1], dtype=torch.float).cuda()])
+                        siamese_set.append([emb_tar, s_self, torch.ones([1], dtype=torch.float).cuda()])
+                        siamese_set.append([emb_rc_self, r_tar, torch.ones([1], dtype=torch.float).cuda()])
+                        siamese_set.append([emb_rc_self, s_tar, torch.ones([1], dtype=torch.float).cuda()])
+                        siamese_set.append([emb_self, r_tar, torch.ones([1], dtype=torch.float).cuda()])
+                        siamese_set.append([emb_self, s_tar, torch.ones([1], dtype=torch.float).cuda()])
 
-                siamese_set.append([emb_rc_self, emb_self, torch.zeros([1], dtype=torch.float)])
-                siamese_set.append([emb_rc_self, emb_rc_tar, torch.ones([1], dtype=torch.float)])
+                siamese_set.append([emb_rc_self, emb_self, torch.zeros([1], dtype=torch.float).cuda()])
+                siamese_set.append([emb_rc_self, emb_rc_tar, torch.ones([1], dtype=torch.float).cuda()])
 
         # siamese_set = torch.FloatTensor(siamese_set)#(4xn, 3, 128)
         # reconstruct_set = torch.FloatTensor(reconstruct_set).cuda() # (4, 2, 3, 24, 24)
@@ -324,7 +324,7 @@ class KeyNet(nn.Module):
         # (4, 1 , 125, 160)
         feat_x_set = torch.cat([i.unsqueeze(0) for i in feat_x_set], dim=0)
         feat_x_set = feat_x_set.transpose(1, 0).contiguous()  # (1, 5, 125, 160)
-        s_f = feat_x_set[:, 0:feat_x_set.size(1), : , :]  # (1, 4, 125, 160)
+        s_f = feat_x_set[:, 0:self.opt.w_size , : , :]  # (1, 4, 125, 160)
         t_f = feat_x_set[:, feat_x_set.size(1) - 1, :, :]  # (1, 1, 125, 160)
         # Cross attention across frames in the memory_bank.
         t_f = t_f.unsqueeze(0)

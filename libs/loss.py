@@ -251,6 +251,12 @@ class Loss(_Loss):
         original_set_fr1 = torch.cat([i[0].unsqueeze(0) for i in original_set_fr], dim=0)
         original_set_fr2 = torch.cat([i[1].unsqueeze(0) for i in original_set_fr], dim=0)
 
+        reconstruct_set_to1 = torch.cat([i[0].unsqueeze(0) for i in reconstruct_set_to], dim=0)
+        reconstruct_set_to2 = torch.cat([i[1].unsqueeze(0) for i in reconstruct_set_to], dim=0)
+        original_set_to1 = torch.cat([i[0].unsqueeze(0) for i in original_set_to], dim=0)
+        original_set_to2 = torch.cat([i[1].unsqueeze(0) for i in original_set_to], dim=0)
+
+
         ssim_loss = pytorch_ssim.SSIM(window_size=4)
         for i in range(opt.w_size - 1):
             ssim_self_fr = 0.85 * (1 - ssim_loss(reconstruct_set_fr1, original_set_fr1)) / 2 + 0.15 * torch.mean(
@@ -258,10 +264,8 @@ class Loss(_Loss):
             ssim_tar_fr = 0.85 * (1 - ssim_loss(reconstruct_set_fr2, original_set_fr2)) / 2 + 0.15 * torch.mean(
                 reconstruct_set_fr2 - original_set_fr2)
 
-            ssim_self_to = 0.85 * (1 - ssim_loss(reconstruct_set_to1, original_set_to1)) / 2 + 0.15 * torch.mean(
-                reconstruct_set_to1 - original_set_to1)
-            ssim_tar_to = 0.85 * (1 - ssim_loss(reconstruct_set_to2, original_set_to2)) / 2 + 0.15 * torch.mean(
-                reconstruct_set_to2 - original_set_to2)
+            ssim_self_to = 0.85 * (1 - ssim_loss(reconstruct_set_to1, original_set_to1)) / 2 + 0.15 * torch.mean(reconstruct_set_to1 - original_set_to1)
+            ssim_tar_to = 0.85 * (1 - ssim_loss(reconstruct_set_to2, original_set_to2)) / 2 + 0.15 * torch.mean( reconstruct_set_to2 - original_set_to2)
 
             if i == 0:
                 loss_rc = ssim_self_fr + ssim_tar_fr + ssim_self_to + ssim_tar_to
@@ -297,15 +301,16 @@ class Loss(_Loss):
         if self.opt.sim == 'sim':
             loss = loss_att * 4.0 + Kp_dis * 3.0 + Kp_cent_dis + loss_rot * 0.2 + loss_surf * 3.0 + loss_sep + loss_rc
             print(
-                'Category:{} || Attention loss:{} || Mult_view loss:{}, {} || Rotation loss:{} || Surface loss:{} || Reconstruction loss:{} '.format(
+                'Category:{} || Attention loss:{:.3f} || Mult_view loss:{:.3f}, {:.3f} || Rotation loss:{:.3f} || Surface loss:{:.3f} || Reconstruction loss:{:.3f} '.format(
                     cate.view(-1).item(), loss_att.item(), Kp_dis.item(), Kp_cent_dis.item(), loss_rot.item(),
                     loss_surf.item(), loss_sep, loss_rc.item()))
         else:
             loss = loss_att * 4.0 + Kp_dis * 3.0 + Kp_cent_dis + loss_rot * 0.2 + loss_surf * 3.0 + loss_sep + loss_rc + loss_sia
             print(
-                'Category:{} || Attention loss:{} || Mult_view loss:{}, {} || Rotation loss:{} || Surface loss:{} || Reconstruction loss:{} || Siamese loss:{}'.format(
+                'Category:{} || Attention loss:{:.3f} || Mult_view loss:{:.3f}, {:.3f} || Rotation loss:{:.3f} || Surface loss:{:.3f} || Reconstruction loss:{:.3f} || Siamese loss:{:.3f}'.format(
                     cate.view(-1).item(), loss_att.item(), Kp_dis.item(), Kp_cent_dis.item(), loss_rot.item(),
                     loss_surf.item(), loss_sep, loss_rc.item(), loss_sia))
+
 
         score = (loss_att * 4.0 + Kp_dis * 3.0 + Kp_cent_dis + loss_rot * 0.2).item()
 

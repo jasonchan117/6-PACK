@@ -26,7 +26,7 @@ class Dataset(data.Dataset):
         self.num_pt = num_pt
         self.num_cates = num_cates
         self.back_root = '{0}/train2017/'.format(self.root)
-        self.w_size = w_size
+        self.w_size = w_size + 1
         self.cate_id = cate_id
         # Path list: obj_list[], real_obj_list[], back_list[],
         self.obj_list = {}

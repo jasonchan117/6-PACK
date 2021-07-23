@@ -48,7 +48,7 @@ dataloader = torch.utils.data.DataLoader(dataset, batch_size=opt.batch_size, shu
 test_dataset = Dataset('val', opt.dataset_root, False, opt.num_points, opt.num_cates, 1000, opt.category, opt.w_size)
 testdataloader = torch.utils.data.DataLoader(test_dataset, batch_size=1, shuffle=True, num_workers=opt.workers)
 
-criterion = Loss(opt.num_kp, opt.num_cates, opt=opt)
+criterion = Loss(opt.num_kp, opt.num_cates, opt=opt).cuda()
 
 best_test = np.Inf
 optimizer = optim.Adam(model.parameters(), lr=opt.lr)
@@ -61,6 +61,7 @@ for epoch in tqdm(range(0, opt.epoch)):
     optimizer.zero_grad()
 
     for i, data in tqdm(enumerate(dataloader, 0)):
+        print('--->  Epoch:{}, Batch:{}'.format(epoch, i))
         img_fr, choose_fr, cloud_fr, r_fr, t_fr, img_to, choose_to, cloud_to, r_to, t_to, mesh, anchor, scale, cate = data
         '''
         Output size: img_fr:torch.Size([1, 3, 320, 160])||choose_fr:torch.Size([1, 1, 500])||cloud_fr:torch.Size([1, 500, 3])||r_fr:torch.Size([1, 3, 3])||t_fr:torch.Size([1, 3])||mesh:torch.Size([1, 3895, 3])||anchor:torch.Size([1, 125, 3])
@@ -117,13 +118,13 @@ for epoch in tqdm(range(0, opt.epoch)):
             Kp_to, anc_to, att_to, reconstruct_set_to, original_set_to = model(img_to, choose_to, cloud_to, anchor,
                                                                               scale, cate, t_to)
 
-            loss, _ = criterion(opt, Kp_fr, Kp_to, anc_fr, anc_to, att_fr, att_to, r_fr, t_fr, r_to, t_to, mesh, scale, cate, reconstruct_set_fr, reconstruct_set_to, original_set_fr, original_set_to)
+            loss, _ = criterion(opt, Kp_fr, Kp_to, anc_fr, anc_to, att_fr, att_to, r_fr.transpose(1, 0).contiguous()[-1], t_fr.transpose(1, 0).contiguous()[-1], r_to.transpose(1, 0).contiguous()[-1], t_to.transpose(1, 0).contiguous()[-1], mesh.transpose(1, 0).contiguous()[-1], scale.transpose(1, 0).contiguous()[-1], cate, reconstruct_set_fr, reconstruct_set_to, original_set_fr, original_set_to)
         else:
             Kp_fr, anc_fr, att_fr, reconstruct_set_fr, original_set_fr, siamese_set_fr = model(img_fr, choose_fr, cloud_fr, anchor,
                                                                               scale, cate, t_fr)
             Kp_to, anc_to, att_to, reconstruct_set_to, original_set_to, siamese_set_to = model(img_to, choose_to, cloud_to, anchor,
                                                                               scale, cate, t_to)
-            loss, _ = criterion(opt, Kp_fr, Kp_to, anc_fr, anc_to, att_fr, att_to, r_fr, t_fr, r_to, t_to, mesh, scale, cate, reconstruct_set_fr, reconstruct_set_to, original_set_fr, original_set_to, siamese_set_fr, siamese_set_to)
+            loss, _ = criterion(opt, Kp_fr, Kp_to, anc_fr, anc_to, att_fr, att_to, r_fr.transpose(1, 0).contiguous()[-1], t_fr.transpose(1, 0).contiguous()[-1], r_to.transpose(1, 0).contiguous()[-1], t_to.transpose(1, 0).contiguous()[-1], mesh.transpose(1, 0).contiguous()[-1], scale.transpose(1, 0).contiguous()[-1], cate, reconstruct_set_fr, reconstruct_set_to, original_set_fr, original_set_to, siamese_set_fr, siamese_set_to)
 
         loss.backward()
 
@@ -160,10 +161,20 @@ for epoch in tqdm(range(0, opt.epoch)):
                                                                                                                      Variable(scale).cuda(), \
                                                                                                                      Variable(cate).cuda()
 
-        Kp_fr, anc_fr, att_fr = model(img_fr, choose_fr, cloud_fr, anchor, scale, cate, t_fr)
-        Kp_to, anc_to, att_to = model(img_to, choose_to, cloud_to, anchor, scale, cate, t_to)
+        if opt.sim == 'ssim':
+            Kp_fr, anc_fr, att_fr, reconstruct_set_fr, original_set_fr = model(img_fr, choose_fr, cloud_fr, anchor,
+                                                                              scale, cate, t_fr)
+            Kp_to, anc_to, att_to, reconstruct_set_to, original_set_to = model(img_to, choose_to, cloud_to, anchor,
+                                                                              scale, cate, t_to)
 
-        _, item_score = criterion(Kp_fr, Kp_to, anc_fr, anc_to, att_fr, att_to, r_fr, t_fr, r_to, t_to, mesh, scale, cate)
+            _, item_score = criterion(opt, Kp_fr, Kp_to, anc_fr, anc_to, att_fr, att_to, r_fr.transpose(1, 0).contiguous()[-1], t_fr.transpose(1, 0).contiguous()[-1], r_to.transpose(1, 0).contiguous()[-1], t_to.transpose(1, 0).contiguous()[-1], mesh.transpose(1, 0).contiguous()[-1], scale.transpose(1, 0).contiguous()[-1], cate, reconstruct_set_fr, reconstruct_set_to, original_set_fr, original_set_to)
+        else:
+            Kp_fr, anc_fr, att_fr, reconstruct_set_fr, original_set_fr, siamese_set_fr = model(img_fr, choose_fr, cloud_fr, anchor,
+                                                                              scale, cate, t_fr)
+            Kp_to, anc_to, att_to, reconstruct_set_to, original_set_to, siamese_set_to = model(img_to, choose_to, cloud_to, anchor,
+                                                                              scale, cate, t_to)
+            _, item_score = criterion(opt, Kp_fr, Kp_to, anc_fr, anc_to, att_fr, att_to, r_fr.transpose(1, 0).contiguous()[-1], t_fr.transpose(1, 0).contiguous()[-1], r_to.transpose(1, 0).contiguous()[-1], t_to.transpose(1, 0).contiguous()[-1], mesh.transpose(1, 0).contiguous()[-1], scale.transpose(1, 0).contiguous()[-1], cate, reconstruct_set_fr, reconstruct_set_to, original_set_fr, original_set_to, siamese_set_fr, siamese_set_to)
+
         
         print(item_score)
         score.append(item_score)
