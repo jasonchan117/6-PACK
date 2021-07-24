@@ -136,9 +136,7 @@ class Loss(_Loss):
 
         return ver_Kp, cent0
 
-    def forward(self, opt, Kp_fr, Kp_to, anc_fr, anc_to, att_fr, att_to, r_fr, t_fr, r_to, t_to, mesh, scale, cate,
-                reconstruct_set_fr, reconstruct_set_to, original_set_fr, original_set_to, siamese_set_fr=None,
-                siamese_set_to=None):
+    def forward(self, opt, Kp_fr, Kp_to, anc_fr, anc_to, att_fr, att_to, r_fr, t_fr, r_to, t_to, mesh, scale, cate, ssim_total_fr, ssim_total_to, loss_sia_fr = None, loss_sia_to = None):
         # kp_fr: (1, 8, 3), anc_fr:(1, 125, 3), att_fr:(1, 125)
         if cate.view(-1).item() in [2, 4, 5]:
             sym_or_not = False
@@ -239,63 +237,11 @@ class Loss(_Loss):
 
         loss_sep = (loss_sep_fr + loss_sep_to) / 2.0
 
-        # Reconstruction loss
-        # (4, 2, 3, 24, 24)
-        # self, target
-        # reconstruct_set_to = reconstruct_set_to.transpose(1, 2, 0).contiguous()
-        # reconstruct_set_fr = reconstruct_set_fr.transpose(1, 2, 0).contiguous()
-        # original_set_to = original_set_to.transpose(1, 2, 0).contiguous()
-        # original_set_fr = original_set_fr.transpose(1, 2, 0).contiguous()
-        reconstruct_set_fr1 = torch.cat([i[0].unsqueeze(0) for i in reconstruct_set_fr], dim=0)
-        reconstruct_set_fr2 = torch.cat([i[1].unsqueeze(0) for i in reconstruct_set_fr], dim=0)
-        original_set_fr1 = torch.cat([i[0].unsqueeze(0) for i in original_set_fr], dim=0)
-        original_set_fr2 = torch.cat([i[1].unsqueeze(0) for i in original_set_fr], dim=0)
-
-        reconstruct_set_to1 = torch.cat([i[0].unsqueeze(0) for i in reconstruct_set_to], dim=0)
-        reconstruct_set_to2 = torch.cat([i[1].unsqueeze(0) for i in reconstruct_set_to], dim=0)
-        original_set_to1 = torch.cat([i[0].unsqueeze(0) for i in original_set_to], dim=0)
-        original_set_to2 = torch.cat([i[1].unsqueeze(0) for i in original_set_to], dim=0)
-
-
-        ssim_loss = pytorch_ssim.SSIM(window_size=4)
-        for i in range(opt.w_size - 1):
-            ssim_self_fr = 0.85 * (1 - ssim_loss(reconstruct_set_fr1, original_set_fr1)) / 2 + 0.15 * torch.mean(
-                reconstruct_set_fr1 - original_set_fr1)
-            ssim_tar_fr = 0.85 * (1 - ssim_loss(reconstruct_set_fr2, original_set_fr2)) / 2 + 0.15 * torch.mean(
-                reconstruct_set_fr2 - original_set_fr2)
-
-            ssim_self_to = 0.85 * (1 - ssim_loss(reconstruct_set_to1, original_set_to1)) / 2 + 0.15 * torch.mean(reconstruct_set_to1 - original_set_to1)
-            ssim_tar_to = 0.85 * (1 - ssim_loss(reconstruct_set_to2, original_set_to2)) / 2 + 0.15 * torch.mean( reconstruct_set_to2 - original_set_to2)
-
-            if i == 0:
-                loss_rc = ssim_self_fr + ssim_tar_fr + ssim_self_to + ssim_tar_to
-            else:
-                loss_rc = loss_rc + ssim_self_fr + ssim_tar_fr + ssim_self_to + ssim_tar_to
-        loss_rc /= (opt.w_size - 1)
+        ########### Reconstruction loss
+        loss_rc = ssim_total_fr + ssim_total_to
 
         ########### Siamese Loss
-        # Input #(4xn, 3, 128)
-        if opt.sim != 'ssim':
-            # (4xn, 1, 3, 128)
-            # siamese_set_fr = siamese_set_fr.transpose(0, 2, 1).contiguous()
-            # siamese_set_to = siamese_set_to.transpose(0, 2, 1).contiguous()
-
-            # siamese_set_fr = siamese_set_fr.view(-1, 3, siamese_set_fr.size(3)) #(n, 3, 128)
-            # siamese_set_to = siamese_set_to.view(-1, 3, siamese_set_to.size(3)) #(n, 3, 128)
-
-            # siamese_set_fr = siamese_set_fr.transpose(1, 0).contiguous() # (3, n, 128)
-            # siamese_set_to = siamese_set_to.transpose(1, 0).contiguous() # (3, n, 128)
-            siamese_set_fr1 = torch.cat([t[0].unsqueeze(0) for t in siamese_set_fr], dim=0)
-            siamese_set_fr2 = torch.cat([t[1].unsqueeze(0) for t in siamese_set_fr], dim=0)
-            siamese_set_fr3 = torch.cat([t[2].unsqueeze(0) for t in siamese_set_fr], dim=0)
-
-            siamese_set_to1 = torch.cat([t[0].unsqueeze(0) for t in siamese_set_to], dim=0)
-            siamese_set_to2 = torch.cat([t[1].unsqueeze(0) for t in siamese_set_to], dim=0)
-            siamese_set_to3 = torch.cat([t[2].unsqueeze(0) for t in siamese_set_to], dim=0)
-            fr_loss = self.sia_loss(siamese_set_fr1, siamese_set_fr2, siamese_set_fr3)
-            to_loss = self.sia_loss(siamese_set_to1, siamese_set_to2, siamese_set_to3)
-
-            loss_sia = fr_loss + to_loss
+        loss_sia = loss_sia_fr + loss_sia_to
 
         ########### SUM UP
         if self.opt.sim == 'sim':

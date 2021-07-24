@@ -390,8 +390,9 @@ class Dataset(data.Dataset):
         choose = (mask_target.flatten() != False).nonzero()[0]
         if len(choose) == 0:
             return 0
+        # [:, rmin:rmax, cmin:cmax]
+        img = np.transpose(img[:, :, :3], (2, 0, 1))
 
-        img = np.transpose(img[:, :, :3], (2, 0, 1))[:, rmin:rmax, cmin:cmax]
         depth = depth[rmin:rmax, cmin:cmax]# Cropping depth map.
 
         img = img / 255.0
@@ -445,9 +446,9 @@ class Dataset(data.Dataset):
             cloud = cloud + np.random.normal(loc=0.0, scale=0.003, size=cloud.shape)
 
         if syn_or_real:
-            return img, choose, cloud, r, t, target, mesh_pts, mesh_bbox, mask_target
+            return img, choose, cloud, r, t, target, mesh_pts, mesh_bbox, mask_target, rmin, rmax, cmin ,cmax
         else:
-            return img, choose, cloud, r, t, target, mask_target
+            return img, choose, cloud, r, t, target, mask_target, rmin, rmax, cmin ,cmax
 
 
     def re_scale(self, target_fr, target_to):
@@ -477,6 +478,7 @@ class Dataset(data.Dataset):
         scale_set = []
         anchor_set = []
         mesh_set = []
+        bb_set = []
         if syn_or_real:
             # Synthetic data 3/4
             choose_obj = random.sample(self.obj_name_list[self.cate_id], 1)[0]# Select one object.
@@ -487,13 +489,13 @@ class Dataset(data.Dataset):
                         # choose_obj = random.sample(self.obj_name_list[self.cate_id], 1)[0] # 1a9e1fb2a51ffd065b07a27512172330 this code indicate the same obj with different pose under the same category.
                         choose_frame = random.sample(self.obj_list[self.cate_id][choose_obj], 2)# Path like data/train/06652/0003
 
-                        img_fr, choose_fr, cloud_fr, r_fr, t_fr, target_fr, mesh_pts_fr, mesh_bbox_fr, mask_target = self.get_frame(choose_frame[0], choose_obj, syn_or_real)
+                        img_fr, choose_fr, cloud_fr, r_fr, t_fr, target_fr, mesh_pts_fr, mesh_bbox_fr, mask_target, rmin_fr , rmax_fr, cmin_fr , cmax_fr = self.get_frame(choose_frame[0], choose_obj, syn_or_real)
                         if np.max(abs(target_fr)) > 1.0:
                             continue
-                        img_to, choose_to, cloud_to, r_to, t_to, target_to, _, _, _, = self.get_frame(choose_frame[1], choose_obj, syn_or_real)
+                        img_to, choose_to, cloud_to, r_to, t_to, target_to, _, _, _, rmin_to, rmax_to, cmin_to ,cmax_to = self.get_frame(choose_frame[1], choose_obj, syn_or_real)
                         if np.max(abs(target_to)) > 1.0:
                             continue
-
+                        bb_set.append([rmin_fr , rmax_fr, cmin_fr , cmax_fr, rmin_to, rmax_to, cmin_to ,cmax_to])
                         target, scale_factor = self.re_scale(target_fr, target_to)
                         target_mesh_fr, scale_factor_mesh_fr = self.re_scale(target_fr, mesh_bbox_fr)
 
@@ -528,10 +530,11 @@ class Dataset(data.Dataset):
 
                         choose_frame = random.sample(self.real_obj_list[self.cate_id][choose_obj], 2)
 
-                        img_fr, choose_fr, cloud_fr, r_fr, t_fr, target, _ = self.get_frame(choose_frame[0], choose_obj, syn_or_real)
-                        img_to, choose_to, cloud_to, r_to, t_to, target, _ = self.get_frame(choose_frame[1], choose_obj, syn_or_real)
+                        img_fr, choose_fr, cloud_fr, r_fr, t_fr, target, _,  rmin_fr, rmax_fr, cmin_fr ,cmax_fr = self.get_frame(choose_frame[0], choose_obj, syn_or_real)
+                        img_to, choose_to, cloud_to, r_to, t_to, target, _,  rmin_to, rmax_to, cmin_to ,cmax_to  = self.get_frame(choose_frame[1], choose_obj, syn_or_real)
                         if np.max(abs(target)) > 1.0:
                             continue
+                        bb_set.append([rmin_fr , rmax_fr, cmin_fr , cmax_fr, rmin_to, rmax_to, cmin_to ,cmax_to])
                         img_fr = self.norm(torch.from_numpy(img_fr.astype(np.float32)))
                         img_to = self.norm(torch.from_numpy(img_to.astype(np.float32)))
                         img_fr_set.append(img_fr)
@@ -644,12 +647,12 @@ class Dataset(data.Dataset):
         #        torch.from_numpy(anchor_box.astype(np.float32)), \
         #        torch.from_numpy(scale.astype(np.float32)), \
         #        torch.LongTensor(class_gt.astype(np.int32))
-        return img_fr_set, \
+        return torch.FloatTensor(img_fr_set), \
                torch.LongTensor(np.array(choose_fr_set).astype(np.int32)), \
                torch.from_numpy(np.array(cloud_fr_set).astype(np.float32)), \
                torch.from_numpy(np.array(r_fr_set).astype(np.float32)), \
                torch.from_numpy(np.array(t_fr_set).astype(np.float32)), \
-               img_to_set, \
+               torch.FloatTensor(img_to_set), \
                torch.LongTensor(np.array(choose_to_set).astype(np.int32)), \
                torch.from_numpy(np.array(cloud_to_set).astype(np.float32)), \
                torch.from_numpy(np.array(r_to_set).astype(np.float32)), \
@@ -657,7 +660,8 @@ class Dataset(data.Dataset):
                torch.from_numpy(np.array(mesh_set).astype(np.float32)), \
                torch.from_numpy(np.array(anchor_set).astype(np.float32)), \
                torch.from_numpy(np.array(scale_set).astype(np.float32)), \
-               torch.LongTensor(class_gt.astype(np.int32))
+               torch.LongTensor(class_gt.astype(np.int32)), \
+               torch.Tensor(np.array(bb_set).astype(np.int32))
 
     def __len__(self):
         return self.length
