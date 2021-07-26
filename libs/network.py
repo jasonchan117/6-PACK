@@ -273,21 +273,20 @@ class KeyNet(nn.Module):
                 else:
                     Loss_sia += t_l
 
-        
+
         ssim_total = ssim_self_fr + ssim_tar_fr
 
 
         # Compute cross attention bettween current frames and stored frames.
         # feat_x_set = torch.from_numpy(np.array(feat_x_set).astype(np.float32))
-        # (4, 1 , 125, 160)
-        feat_x_set = torch.cat([i.unsqueeze(0) for i in feat_x_set], dim=0)
-        feat_x_set = feat_x_set.transpose(1, 0).contiguous()  # (1, 5, 125, 160)
-        s_f = feat_x_set[:, 0:self.opt.w_size , : , :]  # (1, 4, 125, 160)
-        t_f = feat_x_set[:, feat_x_set.size(1) - 1, :, :]  # (1, 1, 125, 160)
+        # (4, bs , 125, 160)
+        feat_x_set = torch.cat([i.unsqueeze(0).contiguous() for i in feat_x_set], dim=0) #After unsqueeze(0) (1, bs, 125, 160)
+        feat_x_set = feat_x_set.transpose(1, 0).contiguous()  # (bs, 5, 125, 160)
+        s_f = feat_x_set[:, 0:self.opt.w_size , : , :]  # (bs, 4, 125, 160)
+        t_f = feat_x_set[:, feat_x_set.size(1) - 1, :, :]  # (bs, 1, 125, 160)
         # Cross attention across frames in the memory_bank.
-        t_f = t_f.unsqueeze(0)
-        w_feat = self.cross_attention(s_f, t_f)  # (1, 4, 125, 160)
-        feat_x = torch.sum(w_feat, dim=1)  # (1 , 125, 160)
+        w_feat = self.cross_attention(s_f, t_f)  # (bs, 4, 125, 160)
+        feat_x = torch.sum(w_feat, dim=1)  # (bs , 125, 160)
 
         # Anchor features
         # The weighted summation of points to 125 represent anchors whose feature dimension is 160.
