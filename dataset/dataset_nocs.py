@@ -504,8 +504,8 @@ class Dataset(data.Dataset):
                         t_to = t_to * scale_factor
 
 
-                        img_fr = self.norm(torch.from_numpy(img_fr.astype(np.float32)))
-                        img_to = self.norm(torch.from_numpy(img_to.astype(np.float32)))
+                        img_fr = self.norm(torch.from_numpy(img_fr.astype(np.float32))).numpy()
+                        img_to = self.norm(torch.from_numpy(img_to.astype(np.float32))).numpy()
                         img_fr_set.append(img_fr)
                         img_to_set.append(img_to)
                         choose_fr_set.append(choose_fr)
@@ -535,8 +535,8 @@ class Dataset(data.Dataset):
                         if np.max(abs(target)) > 1.0:
                             continue
                         bb_set.append([rmin_fr , rmax_fr, cmin_fr , cmax_fr, rmin_to, rmax_to, cmin_to ,cmax_to])
-                        img_fr = self.norm(torch.from_numpy(img_fr.astype(np.float32)))
-                        img_to = self.norm(torch.from_numpy(img_to.astype(np.float32)))
+                        img_fr = self.norm(torch.from_numpy(img_fr.astype(np.float32))).numpy()
+                        img_to = self.norm(torch.from_numpy(img_to.astype(np.float32))).numpy()
                         img_fr_set.append(img_fr)
                         img_to_set.append(img_to)
                         choose_fr_set.append(choose_fr)
