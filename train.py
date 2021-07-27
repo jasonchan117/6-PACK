@@ -62,7 +62,7 @@ for epoch in tqdm(range(0, opt.epoch)):
 
     for i, data in tqdm(enumerate(dataloader, 0)):
         print('--->  Epoch:{}, Batch:{}'.format(epoch, i))
-        img_fr, choose_fr, cloud_fr, r_fr, t_fr, img_to, choose_to, cloud_to, r_to, t_to, mesh, anchor, scale, cate = data
+        img_fr, choose_fr, cloud_fr, r_fr, t_fr, img_to, choose_to, cloud_to, r_to, t_to, mesh, anchor, scale, cate, bb_set = data
         '''
         Output size: img_fr:torch.Size([1, 3, 320, 160])||choose_fr:torch.Size([1, 1, 500])||cloud_fr:torch.Size([1, 500, 3])||r_fr:torch.Size([1, 3, 3])||t_fr:torch.Size([1, 3])||mesh:torch.Size([1, 3895, 3])||anchor:torch.Size([1, 125, 3])
         img_fr: The image after 2d bounding box cropping, while the original size of the image is 480 x 640.
@@ -71,17 +71,8 @@ for epoch in tqdm(range(0, opt.epoch)):
         anchor: The 3-d coordinates of generated anchors.
         cate: The ground truth category.
         '''
-        # plt.imshow(torch.transpose(img_fr.squeeze(0),0,2).numpy() * 255.)
-        # plt.show()
-        # plt.imshow(torch.transpose(img_to.squeeze(0),0,2).numpy() * 255.)
-        # plt.show()
-        # print('img_fr:{}||choose_fr:{}||cloud_fr:{}||r_fr:{}||t_fr:{}||mesh:{}||anchor:{}||scale:{}||cate:{}'.format(img_fr.size(),choose_fr.size(),cloud_fr.size(),r_fr.size(),t_fr.size(),mesh.size(),anchor.size(),scale.size(),cate.size()))
 
-        # sys.exit()
         if opt.cuda == True:
-            # for ind, e in enumerate(img_fr):
-            #     img_fr[ind] = Variable(img_fr[ind]).cuda()
-            #     img_to[ind] = Variable(img_to[ind]).cuda()
             img_fr, choose_fr, cloud_fr, r_fr, t_fr, img_to, choose_to, cloud_to, r_to, t_to, mesh, anchor, scale, cate, bb_set =Variable(img_fr).cuda(),\
                                                                                                                                  Variable(choose_fr).cuda(), \
                                                                                                                                  Variable(cloud_fr).cuda(), \
@@ -98,9 +89,6 @@ for epoch in tqdm(range(0, opt.epoch)):
                                                                                                                                  Variable(cate).cuda(), \
                                                                                                                                  Variable(bb_set).cuda()
         else:
-            # for ind, e in enumerate(img_fr):
-            #     img_fr[ind] = Variable(img_fr[ind])
-            #     img_to[ind] = Variable(img_to[ind])
             img_fr, choose_fr, cloud_fr, r_fr, t_fr, img_to, choose_to, cloud_to, r_to, t_to, mesh, anchor, scale, cate, bb_set = Variable(img_fr),\
                                                                                                                                  Variable(choose_fr), \
                                                                                                                                  Variable(cloud_fr), \

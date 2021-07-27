@@ -461,7 +461,6 @@ class Dataset(data.Dataset):
 
     def __getitem__(self, index):
         syn_or_real = (random.randint(1, 20) < 15) # True(syn): 3/4, False(real): 1/4
-        self.w_size = self.w_size + 1
         if self.mode == 'val':
             syn_or_real = False
         img_fr_set = []
@@ -632,21 +631,6 @@ class Dataset(data.Dataset):
             fw.write('{0}\n'.format(choose_frame[1]))
             fw.close()
 
-
-        # return self.norm(torch.from_numpy(img_fr.astype(np.float32))), \
-        #        torch.LongTensor(choose_fr.astype(np.int32)), \
-        #        torch.from_numpy(cloud_fr.astype(np.float32)), \
-        #        torch.from_numpy(r_fr.astype(np.float32)), \
-        #        torch.from_numpy(t_fr.astype(np.float32)), \
-        #        self.norm(torch.from_numpy(img_to.astype(np.float32))), \
-        #        torch.LongTensor(choose_to.astype(np.int32)), \
-        #        torch.from_numpy(cloud_to.astype(np.float32)), \
-        #        torch.from_numpy(r_to.astype(np.float32)), \
-        #        torch.from_numpy(t_to.astype(np.float32)), \
-        #        torch.from_numpy(mesh.astype(np.float32)), \
-        #        torch.from_numpy(anchor_box.astype(np.float32)), \
-        #        torch.from_numpy(scale.astype(np.float32)), \
-        #        torch.LongTensor(class_gt.astype(np.int32))
         return torch.FloatTensor(img_fr_set), \
                torch.LongTensor(np.array(choose_fr_set).astype(np.int32)), \
                torch.from_numpy(np.array(cloud_fr_set).astype(np.float32)), \

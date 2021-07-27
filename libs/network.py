@@ -190,7 +190,7 @@ class KeyNet(nn.Module):
             # x is cloud. size(1, 500, 3)
             num_anc = len(anchor[0])  # anchor size: (125, 3), number of anchors:125
 
-            s_ant = self.ssa_sp(out_img)
+            s_ant = self.ssa_sp(img)
             out_img = self.cnn(img)  # img size(1,3,w<480,h<640) output size(1,32, w,h), the output w and h is identical to the original image size.
             # Spatial Attention
             # (1, 32, 480, 640)
@@ -198,35 +198,39 @@ class KeyNet(nn.Module):
             img_set[index] = s_ant
             bs, di, _, _ = out_img.size()
 
-            choose = choose.squeeze(1).contiguous() # (1, 500)
-            emb = out_img
-            emb = emb[:, ]
-            # emb:(1, 32, 500)
+            #choose = choose.squeeze(1).contiguous() # (bs, 500)
+            emb_t = out_img
+            # emb_t: (bs, 32, 480, 640)
             for idx in range(bs) :
-                emb[idx] = emb[idx][:,bb[idx][0]:bb[idx][1], bb[idx][2]:bb[idx][3]]
+                temp = emb_t[idx][:, int(bb[idx][0].item()):int(bb[idx][1].item()),int(bb[idx][2].item()):int(bb[idx][3].item())]
                 # (32, W x h)
-                emb[idx] = emb[idx].view(di, -1)  # size(1, 32, 480 x 640)
+                temp = temp.contiguous()
+                temp = temp.view(di, -1)  # size(32, h x w)
                 # (32, 500)
-                emb[idx] = torch.gather(emb[idx], 1, choose).contiguous()
-            # emb size: (1, 32, 500)
+                temp = torch.gather(temp, 1, choose[idx].repeat(di,1)).contiguous()
+                if (idx == 0):
+                    emb = temp.unsqueeze(0).contiguous()
+                else:
+                    emb = torch.cat([emb,temp.unsqueeze(0).contiguous()], dim = 0).contiguous()
+            # emb size: (bs, 32, 500)
 
             # Assign image embedding to 125 anchors.
             emb = emb.repeat(1, 1, num_anc).contiguous()  # size(1, 32, 500 x 125)
-            output_anchor = anchor.view(1, num_anc, 3)
+            output_anchor = anchor.view(bs, num_anc, 3)
             # anchor size:(1, 125, 3)
             # anchor.view(1, num_anc, 1, 3) size:(1, 125, 1, 3) anchor_for_key size:(1, 125, 8, 3)
             # self.num_key is the default number of keypoints
             # Assign the 125 anchors to 8 kepoints.
-            anchor_for_key = anchor.view(1, num_anc, 1, 3).repeat(1, 1, self.num_key, 1)
+            anchor_for_key = anchor.view(bs, num_anc, 1, 3).repeat(1, 1, self.num_key, 1)
             # anchor size:(1, 125, 500, 3)
             # Assign the 125 anchors to 500 points
-            anchor = anchor.view(1, num_anc, 1, 3).repeat(1, 1, self.num_points, 1)
+            anchor = anchor.view(bs, num_anc, 1, 3).repeat(1, 1, self.num_points, 1)
             # x size(1, 125, 500, 3)
             # Assign 500 cloud points to 125 anchors.
-            x = x.view(1, 1, self.num_points, 3).repeat(1, num_anc, 1, 1)
+            x = x.view(bs, 1, self.num_points, 3).repeat(1, num_anc, 1, 1)
             # This step is to compute the distance between each anchor and could points.
             # x size:(1,125 x 500, 3)
-            x = (x - anchor).view(1, num_anc * self.num_points, 3).contiguous()
+            x = (x - anchor).view(bs, num_anc * self.num_points, 3).contiguous()
             # x size:(1, 3, 125 x 500)
             x = x.transpose(2, 1).contiguous()
             # emb size(1, 32, 500 x 125)
@@ -236,25 +240,23 @@ class KeyNet(nn.Module):
             feat_x = feat_x.transpose(2, 1).contiguous()
             # (1, 125, 500, 160)
             # Points features
-            feat_x = feat_x.view(1, num_anc, self.num_points, 160).contiguous()
+            feat_x = feat_x.view(bs, num_anc, self.num_points, 160).contiguous()
             # (1, 125, 500, 3)
-            loc = x.transpose(2, 1).contiguous().view(1, num_anc, self.num_points, 3)
+            loc = x.transpose(2, 1).contiguous().view(bs, num_anc, self.num_points, 3)
             # sm is softmax function
             # Times -1 is because need to use distance to compute weight, a higher weight corresponds to a closer distance. This will be used to the summation of points.
             # Norm is to compute the distance
             # (1, 125, 500)
             weight = self.sm(-1.0 * torch.norm(loc, dim=3)).contiguous()
             # (1, 125, 500, 160)
-            weight = weight.view(1, num_anc, self.num_points, 1).repeat(1, 1, 1, 160).contiguous()
+            weight = weight.view(bs, num_anc, self.num_points, 1).repeat(1, 1, 1, 160).contiguous()
             feat_x = feat_x * weight
-            feat_x = torch.sum((feat_x), dim=2).contiguous().view(1, num_anc, 160)
+            feat_x = torch.sum((feat_x), dim=2).contiguous().view(bs, num_anc, 160)
             feat_x_set.append(feat_x) #(4, 1, 125, 160)
 
         # Image set including current frame and prevous frames.
         # img_set size:(4, 1, 3, 480, 640)
         target = img_set[-1]  # ( 1(bs), 3, 480, 640)
-        if self.opt.sim != 'ssim':
-            siamese_set = []
         store_image_set = img_set[0:len(img_set) - 1] # (3, 1, 3, 480, 640)
         # Generate warping images for storage images and target image respectively and store them in reconstruct_set.
         for ii, st in enumerate(store_image_set):
@@ -284,6 +286,7 @@ class KeyNet(nn.Module):
         feat_x_set = feat_x_set.transpose(1, 0).contiguous()  # (bs, 5, 125, 160)
         s_f = feat_x_set[:, 0:self.opt.w_size , : , :]  # (bs, 4, 125, 160)
         t_f = feat_x_set[:, feat_x_set.size(1) - 1, :, :]  # (bs, 1, 125, 160)
+        t_f = t_f.unsqueeze(1).contiguous()
         # Cross attention across frames in the memory_bank.
         w_feat = self.cross_attention(s_f, t_f)  # (bs, 4, 125, 160)
         feat_x = torch.sum(w_feat, dim=1)  # (bs , 125, 160)
@@ -303,7 +306,7 @@ class KeyNet(nn.Module):
         # num_key: 8
         # Order 8 keypoints 3d coordinates.
         # kp_x size: (1, 125, 8, 3)
-        kp_x = kp_feat.view(1, num_anc, self.num_key, 3).contiguous()
+        kp_x = kp_feat.view(bs, num_anc, self.num_key, 3).contiguous()
         kp_x = (kp_x + anchor_for_key).contiguous()
         # att_1 is 1-d conv with 1 kernel size.
         # (1, 90, 125)
@@ -313,23 +316,23 @@ class KeyNet(nn.Module):
         att_feat = self.att_2(att_feat)
         att_feat = att_feat.transpose(2, 1).contiguous()
         # (1, 125)
-        att_feat = att_feat.view(1, num_anc).contiguous()
+        att_feat = att_feat.view(bs, num_anc).contiguous()
         att_x = self.sm2(att_feat).contiguous()
         # (1, 125, 3)
-        scale_anc = scale.view(1, 1, 3).repeat(1, num_anc, 1)
+        scale_anc = scale.view(bs, 1, 3).repeat(1, num_anc, 1)
         # output_anchor = original anchor(1, 125, 3)
         output_anchor = (output_anchor * scale_anc).contiguous()
         # min_choose is index of the anchor that is closest to the centroid of the object.
         # (1,)
-        min_choose = torch.argmin(torch.norm(output_anchor - gt_t, dim=2).view(-1))
+        min_choose = torch.argmin(torch.norm(output_anchor - gt_t.unsqueeze(1).repeat(1, 125, 1).contiguous(), dim=2).view(-1))
         # (1, 125, 24)
-        all_kp_x = kp_x.view(1, num_anc, 3 * self.num_key).contiguous()
+        all_kp_x = kp_x.view(bs, num_anc, 3 * self.num_key).contiguous()
         # Select the anchor with the index min_choose. (1, 1, 24)
         all_kp_x = all_kp_x[:, min_choose, :].contiguous()
         # (1, 8, 3)
-        all_kp_x = all_kp_x.view(1, self.num_key, 3).contiguous()
+        all_kp_x = all_kp_x.view(bs, self.num_key, 3).contiguous()
         # (1, 8, 3)
-        scale_kp = scale.view(1, 1, 3).repeat(1, self.num_key, 1)
+        scale_kp = scale.view(bs, 1, 3).repeat(1, self.num_key, 1)
         all_kp_x = (all_kp_x * scale_kp).contiguous()
         # The purpose of attention module is to predict the anchor that is the closest to the centroid of object, So need to leverage gt_t to compute the index of ground truth anchor and extract the cooresponding keypoints.
         # (Ground Truth)all_kp_x: The selected kepoint coordinate that is closest to the centroid, (1, 8, 3) .This is infer from the weighted summed anchor feature to select the one that is closest to the object centroid.

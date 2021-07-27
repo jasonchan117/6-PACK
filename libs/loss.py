@@ -138,7 +138,8 @@ class Loss(_Loss):
 
     def forward(self, opt, Kp_fr, Kp_to, anc_fr, anc_to, att_fr, att_to, r_fr, t_fr, r_to, t_to, mesh, scale, cate, ssim_total_fr, ssim_total_to, loss_sia_fr = None, loss_sia_to = None):
         # kp_fr: (1, 8, 3), anc_fr:(1, 125, 3), att_fr:(1, 125)
-        if cate.view(-1).item() in [2, 4, 5]:
+        bs = Kp_fr.size(0)
+        if cate[0].view(-1).item() in [2, 4, 5]:
             sym_or_not = False
         else:
             sym_or_not = True
@@ -149,16 +150,14 @@ class Loss(_Loss):
         ############ Attention Loss
         # The ground truth translation of object for each anchor
         # (1, 125, 3)
-        gt_t_fr = t_fr.view(1, 1, 3).repeat(1, num_anc, 1)
+        gt_t_fr = t_fr.view(bs, 1, 3).repeat(1, num_anc, 1)
         # (1, ) this is a value indicate the minimum distance between the anchor and the centroid.
         min_fr = torch.min(torch.norm(anc_fr - gt_t_fr, dim=2).view(-1))
-        loss_att_fr = torch.sum(
-            ((torch.norm(anc_fr - gt_t_fr, dim=2).view(1, num_anc) - min_fr) * att_fr).contiguous().view(-1))
+        loss_att_fr = torch.sum(((torch.norm(anc_fr - gt_t_fr, dim=2).view(bs, num_anc) - min_fr) * att_fr).contiguous().view(-1))
 
-        gt_t_to = t_to.view(1, 1, 3).repeat(1, num_anc, 1)
+        gt_t_to = t_to.view(bs, 1, 3).repeat(1, num_anc, 1)
         min_to = torch.min(torch.norm(anc_to - gt_t_to, dim=2).view(-1))
-        loss_att_to = torch.sum(
-            ((torch.norm(anc_to - gt_t_to, dim=2).view(1, num_anc) - min_to) * att_to).contiguous().view(-1))
+        loss_att_to = torch.sum(((torch.norm(anc_to - gt_t_to, dim=2).view(1, num_anc) - min_to) * att_to).contiguous().view(-1))
 
         loss_att = (loss_att_fr + loss_att_to).contiguous() / 2.0
 
@@ -195,7 +194,6 @@ class Loss(_Loss):
             loss_rot = 2.0 * torch.mean(torch.asin(torch.min(cc))).contiguous()
 
         ############# Close To Surface Loss
-        bs = 1
         num_p = 1
         num_point_mesh = self.num_key
 
