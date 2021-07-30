@@ -24,9 +24,9 @@ parser = argparse.ArgumentParser()
 parser.add_argument('--dataset_root', type=str, default = '/content/drive/MyDrive/Dataset/NOCS', help='dataset root dir')
 parser.add_argument('--resume', type=str, default = '',  help='resume model')
 parser.add_argument('--category', type=int, default = 5,  help='category to train')
-parser.add_argument('--num_points', type=int, default = 576, help='points')
+parser.add_argument('--num_points', type=int, default = 300, help='points')
 parser.add_argument('--num_cates', type=int, default = 6, help='number of categories')
-parser.add_argument('--workers', type=int, default = 5, help='number of data loading workers')
+parser.add_argument('--workers', type=int, default = 1, help='number of data loading workers')
 parser.add_argument('--num_kp', type=int, default = 8, help='number of kp')
 parser.add_argument('--outf', type=str, default = '/content/drive/MyDrive/Project/6PACK/', help='save dir')
 parser.add_argument('--lr', default=0.0001, help='learning rate')
@@ -53,14 +53,14 @@ criterion = Loss(opt.num_kp, opt.num_cates, opt=opt).cuda()
 best_test = np.Inf
 optimizer = optim.Adam(model.parameters(), lr=opt.lr)
 
-for epoch in tqdm(range(0, opt.epoch)):
+for epoch in range(0, opt.epoch):
     model.train()
     train_dis_avg = 0.0
     train_count = 0
 
     optimizer.zero_grad()
 
-    for i, data in tqdm(enumerate(dataloader, 0)):
+    for i, data in enumerate(dataloader, 0):
         print('--->  Epoch:{}, Batch:{}'.format(epoch, i))
         img_fr, choose_fr, cloud_fr, r_fr, t_fr, img_to, choose_to, cloud_to, r_to, t_to, mesh, anchor, scale, cate, bb_set = data
         '''
@@ -104,11 +104,13 @@ for epoch in tqdm(range(0, opt.epoch)):
                                                                                                                                  Variable(scale), \
                                                                                                                                  Variable(cate), \
                                                                                                                                  Variable(bb_set)
+
         # kp_fr: (1, 8, 3), anc_fr:(1, 125, 3), att_fr:(1, 125), reconstruct_set:(1, 4, 2, 3, 24, 24)
         # bb_set : (1, 4, 8)
         if opt.sim == 'ssim':
             Kp_fr, anc_fr, att_fr, ssim_total_fr = model(img_fr, choose_fr, cloud_fr, anchor,
                                                                               scale, cate, t_fr, bb_set[:,:,:4])
+
             Kp_to, anc_to, att_to, ssim_total_to = model(img_to, choose_to, cloud_to, anchor,
                                                                               scale, cate, t_to, bb_set[:,:,4:])
 

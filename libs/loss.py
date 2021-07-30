@@ -157,7 +157,7 @@ class Loss(_Loss):
 
         gt_t_to = t_to.view(bs, 1, 3).repeat(1, num_anc, 1)
         min_to = torch.min(torch.norm(anc_to - gt_t_to, dim=2).view(-1))
-        loss_att_to = torch.sum(((torch.norm(anc_to - gt_t_to, dim=2).view(1, num_anc) - min_to) * att_to).contiguous().view(-1))
+        loss_att_to = torch.sum(((torch.norm(anc_to - gt_t_to, dim=2).view(bs, num_anc) - min_to) * att_to).contiguous().view(-1))
 
         loss_att = (loss_att_fr + loss_att_to).contiguous() / 2.0
 

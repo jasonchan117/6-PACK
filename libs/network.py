@@ -324,11 +324,11 @@ class KeyNet(nn.Module):
         output_anchor = (output_anchor * scale_anc).contiguous()
         # min_choose is index of the anchor that is closest to the centroid of the object.
         # (1,)
-        min_choose = torch.argmin(torch.norm(output_anchor - gt_t.unsqueeze(1).repeat(1, 125, 1).contiguous(), dim=2).view(-1))
+        min_choose = torch.argmin(torch.norm(output_anchor - gt_t.unsqueeze(1), dim=2), dim = 1)
         # (1, 125, 24)
         all_kp_x = kp_x.view(bs, num_anc, 3 * self.num_key).contiguous()
         # Select the anchor with the index min_choose. (1, 1, 24)
-        all_kp_x = all_kp_x[:, min_choose, :].contiguous()
+        all_kp_x = torch.gather(all_kp_x, 1, min_choose.unsqueeze(1).unsqueeze(1).repeat(1, 1 ,3 * self.num_key)).contiguous()
         # (1, 8, 3)
         all_kp_x = all_kp_x.view(bs, self.num_key, 3).contiguous()
         # (1, 8, 3)
