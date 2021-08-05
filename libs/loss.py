@@ -59,16 +59,13 @@ class Loss(_Loss):
         bs = pt0.size(0)
         pconf2 = self.pconf.view(bs, self.num_key, 1)
 
-        cent0 = torch.sum(pt0 * pconf2, dim=1).repeat(1, self.num_key, 1).contiguous()
-        cent1 = torch.sum(pt1 * pconf2, dim=1).repeat(1, self.num_key, 1).contiguous()
-
-        diag_mat = torch.diag(self.pconf).unsqueeze(0)
-
+        cent0 = torch.sum(pt0 * pconf2, dim=1).unsqueeze(1).repeat(1, self.num_key, 1).contiguous()
+        cent1 = torch.sum(pt1 * pconf2, dim=1).unsqueeze(1).repeat(1, self.num_key, 1).contiguous()
+        diag_mat = torch.diag(self.pconf[0]).unsqueeze(0).repeat(bs, 1, 1).contiguous()
         x = (pt0 - cent0).transpose(2, 1).contiguous()
         y = pt1 - cent1
 
         pred_t = cent1 - cent0
-
         cov = torch.bmm(torch.bmm(x, diag_mat), y).contiguous().squeeze(0)
 
         u, _, v = torch.svd(cov)
