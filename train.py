@@ -163,13 +163,13 @@ for epoch in range(0, opt.epoch):
             Kp_to, anc_to, att_to, reconstruct_set_to, original_set_to = model(img_to, choose_to, cloud_to, anchor,
                                                                               scale, cate, t_to)
 
-            _, item_score = criterion(opt, Kp_fr, Kp_to, anc_fr, anc_to, att_fr, att_to, r_fr.transpose(1, 0).contiguous()[-1], t_fr.transpose(1, 0).contiguous()[-1], r_to.transpose(1, 0).contiguous()[-1], t_to.transpose(1, 0).contiguous()[-1], mesh.transpose(1, 0).contiguous()[-1], scale.transpose(1, 0).contiguous()[-1], cate, reconstruct_set_fr, reconstruct_set_to, original_set_fr, original_set_to)
+            _, item_score = criterion(opt, Kp_fr, Kp_to, anc_fr, anc_to, att_fr, att_to, r_fr.transpose(1, 0).contiguous()[-1], t_fr.transpose(1, 0).contiguous()[-1], r_to.transpose(1, 0).contiguous()[-1], t_to.transpose(1, 0).contiguous()[-1], mesh.transpose(1, 0).contiguous()[-1], scale.transpose(1, 0).contiguous()[-1], cate[0], reconstruct_set_fr, reconstruct_set_to, original_set_fr, original_set_to)
         else:
             Kp_fr, anc_fr, att_fr, reconstruct_set_fr, original_set_fr, siamese_set_fr = model(img_fr, choose_fr, cloud_fr, anchor,
                                                                               scale, cate, t_fr)
             Kp_to, anc_to, att_to, reconstruct_set_to, original_set_to, siamese_set_to = model(img_to, choose_to, cloud_to, anchor,
                                                                               scale, cate, t_to)
-            _, item_score = criterion(opt, Kp_fr, Kp_to, anc_fr, anc_to, att_fr, att_to, r_fr.transpose(1, 0).contiguous()[-1], t_fr.transpose(1, 0).contiguous()[-1], r_to.transpose(1, 0).contiguous()[-1], t_to.transpose(1, 0).contiguous()[-1], mesh.transpose(1, 0).contiguous()[-1], scale.transpose(1, 0).contiguous()[-1], cate, reconstruct_set_fr, reconstruct_set_to, original_set_fr, original_set_to, siamese_set_fr, siamese_set_to)
+            _, item_score = criterion(opt, Kp_fr, Kp_to, anc_fr, anc_to, att_fr, att_to, r_fr.transpose(1, 0).contiguous()[-1], t_fr.transpose(1, 0).contiguous()[-1], r_to.transpose(1, 0).contiguous()[-1], t_to.transpose(1, 0).contiguous()[-1], mesh.transpose(1, 0).contiguous()[-1], scale.transpose(1, 0).contiguous()[-1], cate[0], reconstruct_set_fr, reconstruct_set_to, original_set_fr, original_set_to, siamese_set_fr, siamese_set_to)
 
         
         print(item_score)

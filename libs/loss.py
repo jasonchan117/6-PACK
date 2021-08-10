@@ -65,22 +65,28 @@ class Loss(_Loss):
         x = (pt0 - cent0).transpose(2, 1).contiguous()
         y = pt1 - cent1
 
-        pred_t = cent1 - cent0
+        # pred_t = cent1 - cent0
+        # cov size(bs, 3, 3)
         cov = torch.bmm(torch.bmm(x, diag_mat), y).contiguous().squeeze(0)
 
-        u, _, v = torch.svd(cov)
+        for ind, co in enumerate(cov):
+            u, _, v = torch.svd(co)
 
-        u = u.transpose(1, 0).contiguous()
-        d = torch.det(torch.mm(v, u)).contiguous().view(bs, 1, 1).contiguous()
-        u = u.transpose(1, 0).contiguous().unsqueeze(0)
+            u = u.transpose(1, 0).contiguous()
+            d = torch.det(torch.mm(v, u)).contiguous().view(1, 1, 1).contiguous()
+            u = u.transpose(1, 0).contiguous().unsqueeze(0)
 
-        ud = torch.cat((u[:, :, :-1], u[:, :, -1:] * d), dim=2)
-        v = v.transpose(1, 0).contiguous().unsqueeze(0)
+            ud = torch.cat((u[:, :, :-1], u[:, :, -1:] * d), dim=2)
+            v = v.transpose(1, 0).contiguous().unsqueeze(0)
 
-        pred_r = torch.bmm(ud, v).transpose(2, 1).contiguous()
+            pred_r_t = torch.bmm(ud, v).transpose(2, 1).contiguous()
+            if ind == 0:
+                pred_r = pred_r_t
+            else:
+                pred_r = torch.cat([pred_r, pred_r_t], dim = 0).contiguous()
 
         if sym_or_not:
-            pred_r = torch.bmm(pred_r, self.sym_axis).contiguous().view(-1).contiguous()
+            pred_r = torch.bmm(pred_r, self.sym_axis.repeat(2, 1, 1)).contiguous().view(-1).contiguous()
 
         return pred_r
 
@@ -229,13 +235,13 @@ class Loss(_Loss):
         gt_Kp_fr_select1 = torch.index_select(gt_Kp_fr, 1, self.select1).contiguous()
         gt_Kp_fr_select2 = torch.index_select(gt_Kp_fr, 1, self.select2).contiguous()
         loss_sep_fr = torch.norm((gt_Kp_fr_select1 - gt_Kp_fr_select2), dim=2).view(-1).contiguous()
-        loss_sep_fr = torch.max(self.zeros, max_rad / 8.0 - loss_sep_fr).contiguous()
+        loss_sep_fr = torch.max(self.zeros.repeat(self.opt.batch_size), max_rad / 8.0 - loss_sep_fr).contiguous()
         loss_sep_fr = torch.mean(loss_sep_fr).contiguous()
 
         gt_Kp_to_select1 = torch.index_select(gt_Kp_to, 1, self.select1).contiguous()
         gt_Kp_to_select2 = torch.index_select(gt_Kp_to, 1, self.select2).contiguous()
         loss_sep_to = torch.norm((gt_Kp_to_select1 - gt_Kp_to_select2), dim=2).view(-1).contiguous()
-        loss_sep_to = torch.max(self.zeros, max_rad / 8.0 - loss_sep_to).contiguous()
+        loss_sep_to = torch.max(self.zeros.repeat(self.opt.batch_size), max_rad / 8.0 - loss_sep_to).contiguous()
         loss_sep_to = torch.mean(loss_sep_to).contiguous()
 
         loss_sep = (loss_sep_fr + loss_sep_to) / 2.0
@@ -244,24 +250,29 @@ class Loss(_Loss):
         loss_rc = ssim_total_fr + ssim_total_to
 
         ########### Siamese Loss
-        loss_sia = loss_sia_fr + loss_sia_to
+        if self.opt.sim != 'ssim':
+            loss_sia = loss_sia_fr + loss_sia_to
 
-        ########### SUM UP
-        if self.opt.sim == 'sim':
-            loss = loss_att * 4.0 + Kp_dis * 3.0 + Kp_cent_dis + loss_rot * 0.2 + loss_surf * 3.0 + loss_sep + loss_rc
+            ########### SUM UP
+        if self.opt.sim == 'ssim':
+            loss = loss_att * 4.0 + torch.mean(Kp_dis) * 3.0 + torch.mean(Kp_cent_dis) + loss_rot * 0.2 + torch.mean(
+                loss_surf) * 3.0 + loss_sep + loss_rc
+            # print('-->',loss_surf.size(), loss_sep.size(), loss_rc.size())
             print(
                 'Category:{} || Attention loss:{:.3f} || Mult_view loss:{:.3f}, {:.3f} || Rotation loss:{:.3f} || Surface loss:{:.3f} || Reconstruction loss:{:.3f} '.format(
-                    cate.view(-1).item(), loss_att.item(), Kp_dis.item(), Kp_cent_dis.item(), loss_rot.item(),
-                    loss_surf.item(), loss_sep, loss_rc.item()))
+                    cate[0].view(-1).item(), loss_att.item(), torch.mean(Kp_dis).item(), torch.mean(Kp_cent_dis).item(),
+                    loss_rot.item(),
+                    torch.mean(loss_surf).item(), loss_sep, loss_rc.item()))
         else:
-            loss = loss_att * 4.0 + Kp_dis * 3.0 + Kp_cent_dis + loss_rot * 0.2 + loss_surf * 3.0 + loss_sep + loss_rc + loss_sia
+            loss = loss_att * 4.0 + torch.mean(Kp_dis) * 3.0 + torch.mean(Kp_cent_dis) + loss_rot * 0.2 + torch.mean(
+                loss_surf) * 3.0 + loss_sep + loss_rc + loss_sia
             print(
                 'Category:{} || Attention loss:{:.3f} || Mult_view loss:{:.3f}, {:.3f} || Rotation loss:{:.3f} || Surface loss:{:.3f} || Reconstruction loss:{:.3f} || Siamese loss:{:.3f}'.format(
-                    cate.view(-1).item(), loss_att.item(), Kp_dis.item(), Kp_cent_dis.item(), loss_rot.item(),
-                    loss_surf.item(), loss_sep, loss_rc.item(), loss_sia))
+                    cate[0].view(-1).item(), loss_att.item(), torch.mean(Kp_dis).item(), torch.mean(Kp_cent_dis).item(),
+                    loss_rot.item(),
+                    torch.mean(loss_surf).item(), loss_sep, loss_rc.item(), loss_sia))
 
-
-        score = (loss_att * 4.0 + Kp_dis * 3.0 + Kp_cent_dis + loss_rot * 0.2).item()
+        score = (loss_att * 4.0 + torch.mean(Kp_dis) * 3.0 + torch.mean(Kp_cent_dis) + loss_rot * 0.2).item()
 
         return loss, score
 
