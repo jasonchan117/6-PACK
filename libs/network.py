@@ -164,7 +164,7 @@ class KeyNet(nn.Module):
             self.ssim_loss = pytorch_ssim.SSIM()
             self.queue = PriorityQueue(opt.w_size, opt.sim)
         self.num_key = num_key
-        self.ssa_sp = SSA_Sp(3)
+        # self.ssa_sp = SSA_Sp(3)
         self.cross_attention = CrossAttention(opt.w_size)
         if opt.cuda == True:
             self.threezero = Variable(torch.from_numpy(np.array([0, 0, 0]).astype(np.float32))).cuda().view(1, 1, 3).repeat(1, self.num_points, 1)
@@ -190,12 +190,12 @@ class KeyNet(nn.Module):
             # x is cloud. size(1, 500, 3)
             num_anc = len(anchor[0])  # anchor size: (125, 3), number of anchors:125
 
-            s_ant = self.ssa_sp(img)
+            # s_ant = self.ssa_sp(img)
             out_img = self.cnn(img)  # img size(1,3,w<480,h<640) output size(1,32, w,h), the output w and h is identical to the original image size.
             # Spatial Attention
             # (1, 32, 480, 640)
 
-            img_set[index] = s_ant
+            # img_set[index] = s_ant
             bs, di, _, _ = out_img.size()
 
             #choose = choose.squeeze(1).contiguous() # (bs, 500)
@@ -251,7 +251,7 @@ class KeyNet(nn.Module):
             # (1, 125, 500, 160)
             weight = weight.view(bs, num_anc, self.num_points, 1).repeat(1, 1, 1, 160).contiguous()
             feat_x = feat_x * weight
-            feat_x = torch.sum((feat_x), dim=2).contiguous().view(bs, num_anc, 160)
+            feat_x = torch.sum((feat_x), dim=2).contiguous().view(bs, num_anc, 160)#### 500 disappeared right here.
             feat_x_set.append(feat_x) #(4, 1, 125, 160)
 
         # Image set including current frame and prevous frames.
