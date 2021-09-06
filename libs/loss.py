@@ -13,7 +13,7 @@ from libs.knn.__init__ import KNearestNeighbor
 import torch.distributions as tdist
 import copy
 from libs.triplet import ContrastiveLoss
-
+from knn_cuda import KNN
 
 class Loss(_Loss):
     def __init__(self, num_key, num_cate, opt):
@@ -53,7 +53,7 @@ class Loss(_Loss):
 
             self.select1 = torch.tensor([i for j in range(num_key - 1) for i in range(num_key)])
             self.select2 = torch.tensor([(i % num_key) for j in range(1, num_key) for i in range(j, j + num_key)])
-        self.knn = KNearestNeighbor(1)
+        self.knn = KNN(1)
 
     def estimate_rotation(self, pt0, pt1, sym_or_not):
         bs = pt0.size(0)
@@ -210,7 +210,7 @@ class Loss(_Loss):
 
         target_fr = mesh[0].transpose(1, 0).contiguous().view(3, -1)
         pred_fr = gt_Kp_fr.permute(2, 0, 1).contiguous().view(3, -1)
-        inds = self.knn(target_fr.unsqueeze(0), pred_fr.unsqueeze(0))
+        _ , inds = self.knn(target_fr.unsqueeze(0), pred_fr.unsqueeze(0))
         target_fr = torch.index_select(target_fr, 1, inds.view(-1) - 1)
         target_fr = target_fr.view(3, bs * num_p, num_point_mesh).permute(1, 2, 0).contiguous()
         pred_fr = pred_fr.view(3, bs * num_p, num_point_mesh).permute(1, 2, 0).contiguous()
@@ -219,7 +219,7 @@ class Loss(_Loss):
 
         target_to = mesh[0].transpose(1, 0).contiguous().view(3, -1)
         pred_to = gt_Kp_to.permute(2, 0, 1).contiguous().view(3, -1)
-        inds = self.knn(target_to.unsqueeze(0), pred_to.unsqueeze(0))
+        _, inds = self.knn(target_to.unsqueeze(0), pred_to.unsqueeze(0))
         target_to = torch.index_select(target_to, 1, inds.view(-1) - 1)
         target_to = target_to.view(3, bs * num_p, num_point_mesh).permute(1, 2, 0).contiguous()
         pred_to = pred_to.view(3, bs * num_p, num_point_mesh).permute(1, 2, 0).contiguous()

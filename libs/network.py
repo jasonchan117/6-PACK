@@ -201,6 +201,7 @@ class KeyNet(nn.Module):
             #choose = choose.squeeze(1).contiguous() # (bs, 500)
             emb_t = out_img
             # emb_t: (bs, 32, 480, 640)
+            # Doing the cropping to each images in the batches.
             for idx in range(bs) :
                 temp = emb_t[idx][:, int(bb[idx][0].item()):int(bb[idx][1].item()),int(bb[idx][2].item()):int(bb[idx][3].item())]
                 # (32, W x h)
