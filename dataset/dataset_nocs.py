@@ -16,14 +16,16 @@ import scipy.misc
 import scipy.io as scio
 import cv2
 import _pickle as cPickle
-
+from skimage.transform import resize
+import matplotlib.pyplot as plt
 class Dataset(data.Dataset):
-    def __init__(self, mode, root, add_noise, num_pt, num_cates, count, cate_id, w_size):
+    def __init__(self, mode, root, add_noise, num_pt, num_cates, count, cate_id, w_size, occlude = False):
         # num_cates is the total number of categories gonna be preloaded from dataset, cate_id is the category need to be trained.
         self.root = root
         self.add_noise = add_noise
         self.mode = mode
         self.num_pt = num_pt
+        self.occlude = occlude
         self.num_cates = num_cates
         self.back_root = '{0}/train2017/'.format(self.root)
         self.w_size = w_size + 1
@@ -31,6 +33,30 @@ class Dataset(data.Dataset):
         # Path list: obj_list[], real_obj_list[], back_list[],
         self.obj_list = {}
         self.obj_name_list = {}
+        self.cate_set = [1 ,2, 3, 4 ,5, 6]
+        self.real_oc_list = {}
+        self.real_oc_name_set = {}
+        for ca in self.cate_set:
+            if ca != self.cate_id:
+                real_oc_name_list = os.listdir('{0}/data_list/real_{1}/{2}/'.format(self.root, self.mode, str(ca)))
+                self.real_oc_name_set[ca] = real_oc_name_list
+        del self.cate_set[self.cate_id - 1]
+        # Get all the occlusions.
+        # print(self.real_oc_name_set)
+        for key in self.real_oc_name_set.keys():
+            for item in self.real_oc_name_set[key]:
+                self.real_oc_list[item] = []
+
+                input_file = open('{0}/data_list/real_{1}/{2}/{3}/list.txt'.format(self.root, self.mode, str(key), item), 'r')
+                while 1:
+                    input_line = input_file.readline()
+                    if not input_line:
+                        break
+                    if input_line[-1:] == '\n':
+                        input_line = input_line[:-1]
+                    self.real_oc_list[item].append('{0}/data/{1}'.format(self.root, input_line))
+                input_file.close()
+
 
         if self.mode == 'train':
             for tmp_cate_id in range(1, self.num_cates+1):
@@ -133,6 +159,49 @@ class Dataset(data.Dataset):
 
         self.trancolor = transforms.ColorJitter(0.8, 0.5, 0.5, 0.05)
         self.length = count
+
+    def get_occlusion(self, oc_obj, oc_frame, syn_or_real):
+        if syn_or_real:
+            cam_cx = self.cam_cx_1
+            cam_cy = self.cam_cy_1
+            cam_fx = self.cam_fx_1
+            cam_fy = self.cam_fy_1
+        else:
+            cam_cx = self.cam_cx_2
+            cam_cy = self.cam_cy_2
+            cam_fx = self.cam_fx_2
+            cam_fy = self.cam_fy_2
+        cam_scale = 1.0
+        oc_target = []
+        oc_input_file = open('{0}/model_scales/{1}.txt'.format(self.root, oc_obj), 'r')
+        for i in range(8):
+            oc_input_line = oc_input_file.readline()
+            if oc_input_line[-1:] == '\n':
+                oc_input_line = oc_input_line[:-1]
+            oc_input_line = oc_input_line.split(' ')
+            oc_target.append([float(oc_input_line[0]), float(oc_input_line[1]), float(oc_input_line[2])])
+        oc_input_file.close()
+        oc_target = np.array(oc_target)
+        r, t, _ = self.get_pose(oc_frame, oc_obj)
+
+        oc_target_tmp = np.dot(oc_target, r.T) + t
+        oc_target_tmp[:, 0] *= -1.0
+        oc_target_tmp[:, 1] *= -1.0
+        oc_rmin, oc_rmax, oc_cmin, oc_cmax = get_2dbbox(oc_target_tmp, cam_cx, cam_cy, cam_fx, cam_fy, cam_scale)
+
+        oc_img = Image.open('{0}_color.png'.format(oc_frame))
+        oc_depth = np.array(self.load_depth('{0}_depth.png'.format(oc_frame)))
+        oc_mask = (cv2.imread('{0}_mask.png'.format(oc_frame))[:, :, 0] == 255)  # White is True and Black is False
+        oc_img = np.array(oc_img)[:, :, :3]  # (3, 640, 480)
+        oc_img = np.transpose(oc_img, (2, 0, 1)) # (3, 640, 480)
+        oc_img = oc_img / 255.0
+        oc_img = oc_img * (~oc_mask)
+        oc_depth = oc_depth * (~oc_mask)
+
+        oc_img = oc_img[:, oc_rmin:oc_rmax, oc_cmin:oc_cmax]
+        oc_depth = oc_depth[oc_rmin:oc_rmax, oc_cmin:oc_cmax]
+        oc_mask = oc_mask[oc_rmin:oc_rmax, oc_cmin:oc_cmax]
+        return oc_img, oc_depth, oc_mask
 
     def divide_scale(self, scale, pts):
         pts[:, 0] = pts[:, 0] / scale[0]
@@ -263,6 +332,7 @@ class Dataset(data.Dataset):
 
     # choose_obj: the code of the object, choose_frame: the samples prefix.
     def get_frame(self, choose_frame, choose_obj, syn_or_real):
+
         if syn_or_real:
             mesh_bbox = []
             input_file = open('{0}/model_pts/{1}.txt'.format(self.root, choose_obj), 'r')
@@ -391,11 +461,76 @@ class Dataset(data.Dataset):
         if len(choose) == 0:
             return 0
         # [:, rmin:rmax, cmin:cmax]
-        img = np.transpose(img[:, :, :3], (2, 0, 1))
-
+        img = np.transpose(img[:, :, :3], (2, 0, 1))[:, rmin:rmax, cmin:cmax]
         depth = depth[rmin:rmax, cmin:cmax]# Cropping depth map.
-
         img = img / 255.0
+
+        if self.occlude == True and random.randint(0,20) >= 10:
+
+            oc_id = random.sample(self.cate_set, 1)[0]
+            oc_obj = random.sample(self.real_oc_name_set[oc_id], 1)[0]
+            oc_frame = random.sample(self.real_oc_list[oc_obj], 1)[0]
+            oc_img, oc_depth, oc_mask = self.get_occlusion(oc_obj, oc_frame, syn_or_real)
+            oc_mask = oc_mask[:, :, np.newaxis]
+            oc_img = np.transpose(oc_img, (1, 2, 0))  # (h, w, 3)
+
+            oc_depth = oc_depth[:, :, np.newaxis]  # (h, w, 1)
+
+            ratio = 1
+            h = int(oc_img.shape[0]/ratio)
+            w = int(oc_img.shape[1]/ratio)
+            hl = random.randint(0, h)
+            hr = random.randint(0, h)
+            wl = random.randint(0, w)
+            wr = random.randint(0, w)
+            oc_img = np.pad(oc_img, ((hl, hr), (wl, wr), (0, 0)), 'constant', constant_values=(0, 0.))
+            oc_depth = np.pad(oc_depth, ((hl, hr), (wl, wr), (0, 0)), 'constant', constant_values=(0., 0.))
+
+            np.set_printoptions(threshold=np.inf)
+            oc_mask = np.pad(oc_mask, ((hl, hr), (wl, wr), (0, 0)), 'constant', constant_values=(1. , 1.))
+            oc_img = resize(oc_img, (img.shape[1], img.shape[2], img.shape[0]))
+            oc_mask = resize(oc_mask,(img.shape[1], img.shape[2], 1))
+            oc_depth = resize(oc_depth, (img.shape[1], img.shape[2], 1), preserve_range=True)
+            oc_img = np.transpose(oc_img, (2, 0, 1)) #(3, h, w)
+            oc_depth = np.transpose(oc_depth, (2, 0, 1))
+            oc_depth = np.squeeze(oc_depth, 0)#(h, w)
+            oc_mask = np.transpose(oc_mask, (2, 0, 1))
+            oc_mask = np.squeeze(oc_mask, 0)
+            oc_mask = (oc_mask == 1.)
+            img = img * oc_mask + oc_img
+
+            mask = (cv2.imread('{0}_mask.png'.format(choose_frame))[:, :, 0] == 255)[rmin:rmax, cmin:cmax]
+            r_depth = depth * (~mask) # Masked object's depth
+            maxm = -1000
+            for (indi, i) in enumerate(r_depth):
+                for (indj, j) in enumerate(i):
+                    if j == 0 or oc_depth[indi][indj] == 0:
+                        continue
+                    if j >= oc_depth[indi][indj]:
+                        continue
+                    maxm = max((oc_depth[indi][indj] - j), maxm)
+            if maxm != -1000:
+                oc_depth = oc_depth - maxm
+                oc_depth = oc_depth * (~oc_mask)
+            depth = depth * oc_mask + oc_depth
+            # plt.subplot(2, 1, 1)
+            # plt.imshow(np.transpose(img, (1, 2, 0)))
+            # plt.subplot(2, 1, 2)
+            # plt.imshow(np.transpose(img_ori, (1, 2, 0)) )
+            # plt.show()
+            #
+            # plt.subplot(2, 1, 1)
+            # plt.imshow(depth)
+            # plt.subplot(2, 1, 2)
+            # plt.imshow(depth_ori)
+            # plt.show()
+
+
+        # Deep copy
+        img_r = img.copy()
+        img_r = np.transpose(img_r, (1, 2, 0))
+        img_r = resize(img_r, (320, 320, 3))
+        img_r = np.transpose(img_r, (2, 0, 1))
 
         choose = (depth.flatten() > -1000.0).nonzero()[0] # Choose is a 1-d list whose size is depend on the number of non zero value in it, which indicate the index of non zero value in depth.
         depth_masked = depth.flatten()[choose][:, np.newaxis].astype(np.float32) # The purpose of this step is to exclude the zero value in depth map.
@@ -446,9 +581,9 @@ class Dataset(data.Dataset):
             cloud = cloud + np.random.normal(loc=0.0, scale=0.003, size=cloud.shape)
 
         if syn_or_real:
-            return img, choose, cloud, r, t, target, mesh_pts, mesh_bbox, mask_target, rmin, rmax, cmin ,cmax
+            return img_r, img, choose, cloud, r, t, target, mesh_pts, mesh_bbox, mask_target
         else:
-            return img, choose, cloud, r, t, target, mask_target, rmin, rmax, cmin ,cmax
+            return img_r, img, choose, cloud, r, t, target, mask_target
 
 
     def re_scale(self, target_fr, target_to):
@@ -461,8 +596,11 @@ class Dataset(data.Dataset):
 
     def __getitem__(self, index):
         syn_or_real = (random.randint(1, 20) < 15) # True(syn): 3/4, False(real): 1/4
+
         if self.mode == 'val':
             syn_or_real = False
+        img_fr_r_set = []
+        img_to_r_set = []
         img_fr_set = []
         img_to_set = []
         choose_fr_set = []
@@ -477,24 +615,29 @@ class Dataset(data.Dataset):
         scale_set = []
         anchor_set = []
         mesh_set = []
-        bb_set = []
+
         if syn_or_real:
             # Synthetic data 3/4
+
             choose_obj = random.sample(self.obj_name_list[self.cate_id], 1)[0]# Select one object.
+
             for w in range(self.w_size):
                 while 1:
                     try:
+
                         # self.cate_id is the category to train, default 5. Randomly sample one obj from the metioned category.
                         # choose_obj = random.sample(self.obj_name_list[self.cate_id], 1)[0] # 1a9e1fb2a51ffd065b07a27512172330 this code indicate the same obj with different pose under the same category.
                         choose_frame = random.sample(self.obj_list[self.cate_id][choose_obj], 2)# Path like data/train/06652/0003
 
-                        img_fr, choose_fr, cloud_fr, r_fr, t_fr, target_fr, mesh_pts_fr, mesh_bbox_fr, mask_target, rmin_fr , rmax_fr, cmin_fr , cmax_fr = self.get_frame(choose_frame[0], choose_obj, syn_or_real)
+                        img_fr_r, img_fr, choose_fr, cloud_fr, r_fr, t_fr, target_fr, mesh_pts_fr, mesh_bbox_fr, mask_target = self.get_frame(choose_frame[0], choose_obj, syn_or_real)
+
                         if np.max(abs(target_fr)) > 1.0:
                             continue
-                        img_to, choose_to, cloud_to, r_to, t_to, target_to, _, _, _, rmin_to, rmax_to, cmin_to ,cmax_to = self.get_frame(choose_frame[1], choose_obj, syn_or_real)
+
+                        img_to_r, img_to, choose_to, cloud_to, r_to, t_to, target_to, _, _, _ = self.get_frame(choose_frame[1], choose_obj, syn_or_real)
                         if np.max(abs(target_to)) > 1.0:
                             continue
-                        bb_set.append([rmin_fr , rmax_fr, cmin_fr , cmax_fr, rmin_to, rmax_to, cmin_to ,cmax_to])
+
                         target, scale_factor = self.re_scale(target_fr, target_to)
                         target_mesh_fr, scale_factor_mesh_fr = self.re_scale(target_fr, mesh_bbox_fr)
 
@@ -503,8 +646,20 @@ class Dataset(data.Dataset):
                         t_to = t_to * scale_factor
 
 
-                        img_fr = self.norm(torch.from_numpy(img_fr.astype(np.float32))).numpy()
-                        img_to = self.norm(torch.from_numpy(img_to.astype(np.float32))).numpy()
+                        # img_fr = self.norm(torch.from_numpy(img_fr.astype(np.float32))).numpy()
+                        # img_to = self.norm(torch.from_numpy(img_to.astype(np.float32))).numpy()
+                        #
+                        # img_fr_r = self.norm(torch.from_numpy(img_fr_r.astype(np.float32))).numpy()
+                        # img_to_r = self.norm(torch.from_numpy(img_fr_r.astype(np.float32))).numpy()
+
+                        img_fr = self.norm(torch.from_numpy(img_fr.astype(np.float32)))
+                        img_to = self.norm(torch.from_numpy(img_to.astype(np.float32)))
+
+                        img_fr_r = self.norm(torch.from_numpy(img_fr_r.astype(np.float32)))
+                        img_to_r = self.norm(torch.from_numpy(img_to_r.astype(np.float32)))
+
+                        img_fr_r_set.append(img_fr_r)
+                        img_to_r_set.append(img_to_r)
                         img_fr_set.append(img_fr)
                         img_to_set.append(img_to)
                         choose_fr_set.append(choose_fr)
@@ -518,6 +673,7 @@ class Dataset(data.Dataset):
                         target_set.append(target)
                         break
                     except:
+
                         continue
 
         else:
@@ -529,13 +685,25 @@ class Dataset(data.Dataset):
 
                         choose_frame = random.sample(self.real_obj_list[self.cate_id][choose_obj], 2)
 
-                        img_fr, choose_fr, cloud_fr, r_fr, t_fr, target, _,  rmin_fr, rmax_fr, cmin_fr ,cmax_fr = self.get_frame(choose_frame[0], choose_obj, syn_or_real)
-                        img_to, choose_to, cloud_to, r_to, t_to, target, _,  rmin_to, rmax_to, cmin_to ,cmax_to  = self.get_frame(choose_frame[1], choose_obj, syn_or_real)
+                        img_fr_r, img_fr, choose_fr, cloud_fr, r_fr, t_fr, target, _ = self.get_frame(choose_frame[0], choose_obj, syn_or_real)
+                        img_to_r, img_to, choose_to, cloud_to, r_to, t_to, target, _ = self.get_frame(choose_frame[1], choose_obj, syn_or_real)
                         if np.max(abs(target)) > 1.0:
                             continue
-                        bb_set.append([rmin_fr , rmax_fr, cmin_fr , cmax_fr, rmin_to, rmax_to, cmin_to ,cmax_to])
-                        img_fr = self.norm(torch.from_numpy(img_fr.astype(np.float32))).numpy()
-                        img_to = self.norm(torch.from_numpy(img_to.astype(np.float32))).numpy()
+
+                        # img_fr = self.norm(torch.from_numpy(img_fr.astype(np.float32))).numpy()
+                        # img_to = self.norm(torch.from_numpy(img_to.astype(np.float32))).numpy()
+                        #
+                        # img_fr_r = self.norm(torch.from_numpy(img_fr_r.astype(np.float32))).numpy()
+                        # img_to_r = self.norm(torch.from_numpy(img_fr_r.astype(np.float32))).numpy()
+
+                        img_fr = self.norm(torch.from_numpy(img_fr.astype(np.float32)))
+                        img_to = self.norm(torch.from_numpy(img_to.astype(np.float32)))
+
+                        img_fr_r = self.norm(torch.from_numpy(img_fr_r.astype(np.float32)))
+                        img_to_r = self.norm(torch.from_numpy(img_to_r.astype(np.float32)))
+
+                        img_fr_r_set.append(img_fr_r)
+                        img_to_r_set.append(img_to_r)
                         img_fr_set.append(img_fr)
                         img_to_set.append(img_to)
                         choose_fr_set.append(choose_fr)
@@ -549,27 +717,8 @@ class Dataset(data.Dataset):
                         target_set.append(target)
                         break
                     except:
+
                         continue
-
-        if False:
-            p_img = np.transpose(img_fr, (1, 2, 0))
-            scipy.misc.imsave('temp/{0}_img_fr.png'.format(index), p_img)
-
-            p_img = np.transpose(img_to, (1, 2, 0))
-            scipy.misc.imsave('temp/{0}_img_to.png'.format(index), p_img)
-
-            scipy.misc.imsave('temp/{0}_mask_fr.png'.format(index), mask_target.astype(np.int64))
-
-            fw = open('temp/{0}_cld_fr.xyz'.format(index), 'w')
-            for it in cloud_fr:
-               fw.write('{0} {1} {2}\n'.format(it[0], it[1], it[2]))
-            fw.close()
-
-            fw = open('temp/{0}_cld_to.xyz'.format(index), 'w')
-            for it in cloud_to:
-               fw.write('{0} {1} {2}\n'.format(it[0], it[1], it[2]))
-            fw.close()
-
 
         class_gt = np.array([self.cate_id-1])
 
@@ -583,60 +732,18 @@ class Dataset(data.Dataset):
         # cloud_fr, cloud_to = self.change_to_scale(scale, cloud_fr, cloud_to)
 
         # mesh = self.mesh * scale
+        # torch.FloatTensor(img_fr_r_set), \
+        # torch.FloatTensor(img_fr_set), \
 
-        if False:
-            fw = open('temp/{0}_aft_cld_fr.xyz'.format(index), 'w')
-            for it in cloud_fr:
-               fw.write('{0} {1} {2}\n'.format(it[0], it[1], it[2]))
-            fw.close()
 
-            fw = open('temp/{0}_aft_cld_to.xyz'.format(index), 'w')
-            for it in cloud_to:
-               fw.write('{0} {1} {2}\n'.format(it[0], it[1], it[2]))
-            fw.close()
-
-            fw = open('temp/{0}_cld_mesh.xyz'.format(index), 'w')
-            for it in mesh:
-               fw.write('{0} {1} {2}\n'.format(it[0], it[1], it[2]))
-            fw.close()
-
-            fw = open('temp/{0}_target.xyz'.format(index), 'w')
-            for it in target:
-               fw.write('{0} {1} {2}\n'.format(it[0], it[1], it[2]))
-            fw.close()
-
-            fw = open('temp/{0}_anchor.xyz'.format(index), 'w')
-            for it in anchor_box:
-               fw.write('{0} {1} {2}\n'.format(it[0], it[1], it[2]))
-            fw.close()
-
-            fw = open('temp/{0}_small_anchor.xyz'.format(index), 'w')
-            for it in small_anchor_box:
-               fw.write('{0} {1} {2}\n'.format(it[0], it[1], it[2]))
-            fw.close()
-
-            fw = open('temp/{0}_pose_fr.xyz'.format(index), 'w')
-            for it in r_fr:
-               fw.write('{0} {1} {2}\n'.format(it[0], it[1], it[2]))
-            it = t_fr
-            fw.write('{0} {1} {2}\n'.format(it[0], it[1], it[2]))
-            fw.write('{0}\n'.format(choose_frame[0]))
-            fw.close()
-
-            fw = open('temp/{0}_pose_to.xyz'.format(index), 'w')
-            for it in r_to:
-               fw.write('{0} {1} {2}\n'.format(it[0], it[1], it[2]))
-            it = t_to
-            fw.write('{0} {1} {2}\n'.format(it[0], it[1], it[2]))
-            fw.write('{0}\n'.format(choose_frame[1]))
-            fw.close()
-
-        return torch.FloatTensor(img_fr_set), \
+        return img_fr_r_set, \
+               img_fr_set, \
                torch.LongTensor(np.array(choose_fr_set).astype(np.int32)), \
                torch.from_numpy(np.array(cloud_fr_set).astype(np.float32)), \
                torch.from_numpy(np.array(r_fr_set).astype(np.float32)), \
                torch.from_numpy(np.array(t_fr_set).astype(np.float32)), \
-               torch.FloatTensor(img_to_set), \
+               img_to_r_set ,\
+               img_to_set, \
                torch.LongTensor(np.array(choose_to_set).astype(np.int32)), \
                torch.from_numpy(np.array(cloud_to_set).astype(np.float32)), \
                torch.from_numpy(np.array(r_to_set).astype(np.float32)), \
@@ -645,7 +752,7 @@ class Dataset(data.Dataset):
                torch.from_numpy(np.array(anchor_set).astype(np.float32)), \
                torch.from_numpy(np.array(scale_set).astype(np.float32)), \
                torch.LongTensor(class_gt.astype(np.int32)), \
-               torch.Tensor(np.array(bb_set).astype(np.int32))
+
 
     def __len__(self):
         return self.length

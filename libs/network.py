@@ -26,6 +26,9 @@ from libs.triplet import SiameseNet
 from libs.triplet import EmbeddingNet
 from libs.triplet import ContrastiveLoss
 import pytorch_ssim
+import sys
+import numpy as np
+import matplotlib.pyplot as plt
 psp_models = {
     'resnet18': lambda: PSPNet(sizes=(1, 2, 3, 6), psp_size=512, deep_features_size=256, backend='resnet18'),
     'resnet34': lambda: PSPNet(sizes=(1, 2, 3, 6), psp_size=512, deep_features_size=256, backend='resnet34'),
@@ -156,63 +159,72 @@ class KeyNet(nn.Module):
         self.sm2 = torch.nn.Softmax(dim=1)
 
         if self.sim != 'ssim':
+            # Using SiameseNet
             self.embed = EmbeddingNet()
             self.triplet = SiameseNet(self.embed)
             self.sia_loss = ContrastiveLoss()
             self.queue = PriorityQueue(opt.w_size, opt.sim, self.triplet)
         else:
-            self.ssim_loss = pytorch_ssim.SSIM()
+            # Using Structural Similarity
+            # self.ssim_loss = pytorch_ssim.SSIM()
             self.queue = PriorityQueue(opt.w_size, opt.sim)
         self.num_key = num_key
         # self.ssa_sp = SSA_Sp(3)
+
+
         self.cross_attention = CrossAttention(opt.w_size)
         if opt.cuda == True:
             self.threezero = Variable(torch.from_numpy(np.array([0, 0, 0]).astype(np.float32))).cuda().view(1, 1, 3).repeat(1, self.num_points, 1)
         else:
             self.threezero = Variable(torch.from_numpy(np.array([0, 0, 0]).astype(np.float32))).view(1, 1, 3).repeat(1, self.num_points, 1)
         self.reconstruct = bi_warp()
-    def forward(self, img_set, choose_set, x_set, anchor_set, scale_set, cate, gt_t_set , bb_set):
+    def forward(self, img_r_set, img_set, choose_set, x_set, anchor_set, scale_set, cate, gt_t_set):
         # bb_set: (1, 4, 8)
         # img_set: (1, 4, 3, 480, 640)
         # When training
+
         choose_set = choose_set.transpose(1, 0).contiguous()
         x_set = x_set.transpose(1, 0).contiguous()
         anchor_set = anchor_set.transpose(1, 0).contiguous()
         scale_set = scale_set.transpose(1, 0).contiguous()
         gt_t_set = gt_t_set.transpose(1, 0).contiguous()
-        img_set = img_set.transpose(1, 0).contiguous()
-        bb_set = bb_set.transpose(1, 0).contiguous()
         feat_x_set = []
-        # Storage image set
-        for index, (img, choose, x, anchor, scale, gt_t, bb) in enumerate(zip(img_set, choose_set, x_set, anchor_set, scale_set, gt_t_set, bb_set)):
+        # Go through all the images in the piority queue
+        for index, (img_r, img, choose, x, anchor, scale, gt_t) in enumerate(zip(img_r_set, img_set, choose_set, x_set, anchor_set, scale_set, gt_t_set)):
             # bb (1, 4)
             # img (1, 3, w, h)
             # x is cloud. size(1, 500, 3)
             num_anc = len(anchor[0])  # anchor size: (125, 3), number of anchors:125
 
-            # s_ant = self.ssa_sp(img)
+            #img = self.ssa_sp(img)
             out_img = self.cnn(img)  # img size(1,3,w<480,h<640) output size(1,32, w,h), the output w and h is identical to the original image size.
             # Spatial Attention
             # (1, 32, 480, 640)
 
             # img_set[index] = s_ant
             bs, di, _, _ = out_img.size()
+            emb = out_img.view(bs, di, -1)
+            choose = choose.repeat(1, di, 1)
 
+            emb = torch.gather(emb, 2, choose).contiguous()
+
+
+            # The cases that batchsize is greater than 1
             #choose = choose.squeeze(1).contiguous() # (bs, 500)
-            emb_t = out_img
-            # emb_t: (bs, 32, 480, 640)
-            # Doing the cropping to each images in the batches.
-            for idx in range(bs) :
-                temp = emb_t[idx][:, int(bb[idx][0].item()):int(bb[idx][1].item()),int(bb[idx][2].item()):int(bb[idx][3].item())]
-                # (32, W x h)
-                temp = temp.contiguous()
-                temp = temp.view(di, -1)  # size(32, h x w)
-                # (32, 500)
-                temp = torch.gather(temp, 1, choose[idx].repeat(di,1)).contiguous()
-                if (idx == 0):
-                    emb = temp.unsqueeze(0).contiguous()
-                else:
-                    emb = torch.cat([emb,temp.unsqueeze(0).contiguous()], dim = 0).contiguous()
+            # emb_t = out_img
+            # # emb_t: (bs, 32, 480, 640)
+            # # Doing the cropping to each images in the batches.
+            # for idx in range(bs) :
+            #     temp = emb_t[idx][:, int(bb[idx][0].item()):int(bb[idx][1].item()),int(bb[idx][2].item()):int(bb[idx][3].item())]
+            #     # (32, W x h)
+            #     temp = temp.contiguous()
+            #     temp = temp.view(di, -1)  # size(32, h x w)
+            #     # (32, 500)
+            #     temp = torch.gather(temp, 1, choose[idx].repeat(di,1)).contiguous()
+            #     if (idx == 0):
+            #         emb = temp.unsqueeze(0).contiguous()
+            #     else:
+            #         emb = torch.cat([emb,temp.unsqueeze(0).contiguous()], dim = 0).contiguous()
             # emb size: (bs, 32, 500)
 
             # Assign image embedding to 125 anchors.
@@ -236,6 +248,7 @@ class KeyNet(nn.Module):
             x = x.transpose(2, 1).contiguous()
             # emb size(1, 32, 500 x 125)
             # The feature of each color points.
+
             feat_x = self.feat(x, emb)  # (DenseFusion) Combine 3D information x and image embedding emb output size(1, 160, 62500=500 x 125)
             # (1, 62500, 160)
             feat_x = feat_x.transpose(2, 1).contiguous()
@@ -257,29 +270,46 @@ class KeyNet(nn.Module):
 
         # Image set including current frame and prevous frames.
         # img_set size:(4, 1, 3, 480, 640)
-        target = img_set[-1]  # ( 1(bs), 3, 480, 640)
-        store_image_set = img_set[0:len(img_set) - 1] # (3, 1, 3, 480, 640)
+        target = img_r_set[-1]  # ( 1(bs), 3, 480, 640)
+        store_image_set = img_r_set[0:len(img_set) - 1] # (3, 1, 3, 480, 640)
         # Generate warping images for storage images and target image respectively and store them in reconstruct_set.
+        recon_img_set = []
         for ii, st in enumerate(store_image_set):
             r_self, r_tar = self.reconstruct(st, target) # (bs, 3, 480, 640)
+            print('>>')
+            print('r_tar:')
+            plt.imshow(r_tar.squeeze(0).detach().cpu().numpy().transpose(1, 2, 0))
+            plt.show()
+            print('tar')
+            plt.imshow(target.squeeze(0).detach().cpu().numpy().transpose(1, 2, 0))
+            plt.show()
+            print('r_self')
+            plt.imshow(r_self.squeeze(0).detach().cpu().numpy().transpose(1, 2, 0))
+            plt.show()
+            print('st')
+            plt.imshow(st.squeeze(0).detach().cpu().numpy().transpose(1, 2, 0))
+            plt.show()
 
 
-            ssim_self_fr = 0.85 * (1 - self.ssim_loss(r_self, st)) / 2 + 0.15 * torch.mean(r_self - st)
-            ssim_tar_fr = 0.85 * (1 - self.ssim_loss(r_tar, target)) / 2 + 0.15 * torch.mean(r_tar - target)
-            if self.opt.sim != 'ssim':
-                emb_rc_tar, emb_tar = self.triplet(r_tar, target)  # (1, 128)
-                emb_rc_self, emb_tar = self.triplet(r_self, target)  # (1, 128)
-                emb_rc_self, emb_self = self.triplet(r_self, st)
-                t_l = self.sia_loss(emb_rc_tar, emb_tar, torch.zeros([emb_rc_tar.size(0), 1], dtype=torch.float).cuda())+ self.sia_loss(emb_rc_tar, emb_rc_self, torch.ones([emb_rc_tar.size(0), 1], dtype=torch.float).cuda()) + self.sia_loss(emb_tar, emb_rc_self, torch.ones([emb_rc_tar.size(0), 1], dtype=torch.float).cuda()) + self.sia_loss(emb_self, emb_tar, torch.ones([emb_rc_tar.size(0), 1], dtype=torch.float).cuda()) + self.sia_loss(emb_rc_self, emb_self, torch.zeros([emb_rc_tar.size(0), 1], dtype=torch.float).cuda()) + self.sia_loss(emb_self, emb_rc_tar, torch.ones([emb_rc_tar.size(0), 1], dtype=torch.float).cuda())
-                if ii == 0 :
-                    Loss_sia = t_l
-                else:
-                    Loss_sia += t_l
 
+            recon_img_set.append([r_self, st])
+            recon_img_set.append([r_tar, target])
 
-        ssim_total = ssim_self_fr + ssim_tar_fr
-
-
+            # ssim_self_fr = 0.85 * (1 - self.ssim_loss(r_self, st)) / 2 + 0.15 * torch.mean(r_self - st)
+            # ssim_tar_fr = 0.85 * (1 - self.ssim_loss(r_tar, target)) / 2 + 0.15 * torch.mean(r_tar - target)
+            # if ii == 0:
+            #     ssim_total = ssim_self_fr + ssim_tar_fr
+            # else:
+            #     ssim_total = ssim_total + ssim_self_fr + ssim_tar_fr
+            # if self.opt.sim != 'ssim':
+            #     emb_rc_tar, emb_tar = self.triplet(r_tar, target)  # (1, 128)
+            #     emb_rc_self, emb_tar = self.triplet(r_self, target)  # (1, 128)
+            #     emb_rc_self, emb_self = self.triplet(r_self, st)
+            #     t_l = self.sia_loss(emb_rc_tar, emb_tar, torch.zeros([emb_rc_tar.size(0), 1], dtype=torch.float).cuda())+ self.sia_loss(emb_rc_tar, emb_rc_self, torch.ones([emb_rc_tar.size(0), 1], dtype=torch.float).cuda()) + self.sia_loss(emb_tar, emb_rc_self, torch.ones([emb_rc_tar.size(0), 1], dtype=torch.float).cuda()) + self.sia_loss(emb_self, emb_tar, torch.ones([emb_rc_tar.size(0), 1], dtype=torch.float).cuda()) + self.sia_loss(emb_rc_self, emb_self, torch.zeros([emb_rc_tar.size(0), 1], dtype=torch.float).cuda()) + self.sia_loss(emb_self, emb_rc_tar, torch.ones([emb_rc_tar.size(0), 1], dtype=torch.float).cuda())
+            #     if ii == 0 :
+            #         Loss_sia = t_l
+            #     else:
+            #         Loss_sia += t_l
         # Compute cross attention bettween current frames and stored frames.
         # feat_x_set = torch.from_numpy(np.array(feat_x_set).astype(np.float32))
         # (4, bs , 125, 160)
@@ -339,9 +369,9 @@ class KeyNet(nn.Module):
         # (Ground Truth)all_kp_x: The selected kepoint coordinate that is closest to the centroid, (1, 8, 3) .This is infer from the weighted summed anchor feature to select the one that is closest to the object centroid.
         # output_anchor: the anchor coordinate, (1, 125, 3)
         # att_x: (1, 125), Attention score for each anchor point.
-        if self.opt.sim != 'ssim':
-            return all_kp_x, output_anchor, att_x, ssim_total, Loss_sia
-        return all_kp_x, output_anchor, att_x, ssim_total
+        # if self.opt.sim != 'ssim':
+        #     return all_kp_x, output_anchor, att_x, ssim_total, Loss_sia
+        return all_kp_x, output_anchor, att_x, recon_img_set
 
     def eval_forward(self, img, choose, ori_x, anchor, scale, space, first):
         num_anc = len(anchor[0])
@@ -389,7 +419,7 @@ class KeyNet(nn.Module):
             feat_x = feat_x.transpose(2, 1)
             feat_x = feat_x.view(1, num_anc, self.num_points, 160).detach()
             # Spatial Attention
-            feat_x = self.ssa_sp(feat_x)
+            #feat_x = self.ssa_sp(feat_x)
             loc = x.transpose(2, 1).view(1, num_anc, self.num_points, 3)
             weight = self.sm(-1.0 * torch.norm(loc, dim=3))
             weight = weight.view(1, num_anc, self.num_points, 1).repeat(1, 1, 1, 160)
